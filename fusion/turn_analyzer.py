@@ -334,7 +334,7 @@ class ConversationalTurnAnalyzer:
         attention_stats: Dict[str, Any],
         speech_segments: Optional[List[Dict[str, Any]]] = None,
         frame_timeline: Optional[List[Dict[str, Any]]] = None,
-        nodding_min_prominence: float = 8.0
+        nodding_min_prominence: float = 11.0
     ) -> Dict[str, Any]:
         """
         Gathers key behavioral events:
@@ -524,7 +524,10 @@ class ConversationalTurnAnalyzer:
                 turn_item["hesitation_seconds"] = round(turn_hesitations_sec, 2)
                 turn_item["is_speaking"] = word_count > 0 or len(turn_segments) > 0
             else:
-                # AI turn: student is listening
+                # AI turn: student is listening (do cả nụ cười, giao tiếp mắt và gật đầu khi lắng nghe)
+                turn_item["eye_contact_ratio"] = eye_contact_ratio
+                turn_item["smile_ratio"] = smile_ratio
+                turn_item["dominant_emotion"] = dom_emo
                 turn_item["attentive_gaze_ratio"] = attentive_ratio
                 turn_item["nodding_count"] = nods_in_turn
                 turn_item["is_speaking"] = False
