@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  face-motion-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: face-motion-gpu-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEVICE=cuda
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./results:/app/results
+      - ./models/checkpoints:/app/models/checkpoints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

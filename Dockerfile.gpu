@@ -1,0 +1,42 @@
+# Production Dockerfile for Face-motion-gpu Multimodal Sale AI API Server
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV DEVICE=cuda
+
+# Install system dependencies & ffmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Alias python3 to python
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+WORKDIR /app
+
+# Copy requirements and install python packages
+COPY requirements-gpu.txt .
+RUN pip install --no-cache-dir -U pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements-gpu.txt
+RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart pydantic
+
+# Copy project files
+COPY . /app
+
+# Ensure checkpoints are downloaded during image build or mounted
+RUN python -c "from models.download_models import download_all_models; download_all_models()" || true
+
+# Expose FastAPI default port
+EXPOSE 8000
+
+# Run uvicorn server (1 worker to maintain single-GPU VRAM efficiency)
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

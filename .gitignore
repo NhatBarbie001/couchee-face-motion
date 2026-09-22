@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches & Environments
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+
+# Large Model Checkpoints & Weights (> 100MB blocked by GitHub)
+models/checkpoints/*.onnx
+models/checkpoints/*.pth
+models/checkpoints/*.pt
+models/checkpoints/*.bin
+models/checkpoints/*.safetensors
+models_cache/
+!models/download_models.py
+
+# Temp & Output Folders
+temp_audio/*
+!temp_audio/.gitkeep
+results/*
+!results/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Media files (sample videos, audios)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*.log
