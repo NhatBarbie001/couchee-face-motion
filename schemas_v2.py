@@ -48,6 +48,8 @@ class TurnEvidence(BaseModel):
     speech_rate_wpm: Optional[float] = None
     hesitation_seconds: Optional[float] = None
     is_speaking: Optional[bool] = None
+    energy_mean: Optional[float] = None
+    vocal_tone: Optional[str] = None
 
 
 class OverallBehavioralMetrics(BaseModel):
@@ -61,6 +63,9 @@ class OverallBehavioralMetrics(BaseModel):
     speech_ratio: Optional[float] = None
     pause_ratio: Optional[float] = None
     total_hesitations_count: Optional[int] = None
+    energy_mean: Optional[float] = None
+    vocal_enthusiasm_ratio: Optional[float] = None
+    vocal_tone: Optional[str] = None
 
 
 class BehavioralAnomalies(BaseModel):

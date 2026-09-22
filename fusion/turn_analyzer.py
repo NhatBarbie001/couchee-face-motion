@@ -468,7 +468,9 @@ class ConversationalTurnAnalyzer:
                 "attentive_gaze_ratio": None,
                 "speech_rate_wpm": None,
                 "hesitation_seconds": 0.0,
-                "is_speaking": None
+                "is_speaking": None,
+                "energy_mean": None,
+                "vocal_tone": None
             }
 
             if turn_frames:
@@ -523,6 +525,7 @@ class ConversationalTurnAnalyzer:
                 turn_item["speech_rate_wpm"] = calculated_wpm
                 turn_item["hesitation_seconds"] = round(turn_hesitations_sec, 2)
                 turn_item["is_speaking"] = word_count > 0 or len(turn_segments) > 0
+                turn_item["energy_mean"] = round(float(getattr(audio_features, "energy_mean", 0.0) or 0.0), 4)
             else:
                 # AI turn: student is listening (do cả nụ cười, giao tiếp mắt và gật đầu khi lắng nghe)
                 turn_item["eye_contact_ratio"] = eye_contact_ratio

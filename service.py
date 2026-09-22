@@ -206,6 +206,28 @@ class MultimodalEvaluatorService:
         }
         return report_dict
 
+    @staticmethod
+    def _classify_vocal_tone(
+        pitch_variance: float,
+        energy_mean: float,
+        enthusiasm_ratio: float,
+        hesitation_count: int = 0
+    ) -> str:
+        """
+        Classifies vocal tone into 4 practical categories for sales coaching:
+        - 'monotone': Flat pitch variance (< 2500), robotic or dull delivery
+        - 'nervous': Erratic pitch variance (> 14000) with low energy or frequent hesitations
+        - 'enthusiastic': High vocal energy and dynamic pitch variation
+        - 'confident': Balanced pitch, steady energy and professional pace
+        """
+        if pitch_variance < 2500 or (energy_mean < 0.015 and pitch_variance < 4000):
+            return "monotone"
+        if (pitch_variance > 14000 and energy_mean < 0.035) or hesitation_count >= 3:
+            return "nervous"
+        if enthusiasm_ratio >= 0.20 or (pitch_variance >= 6000 and energy_mean >= 0.03):
+            return "enthusiastic"
+        return "confident"
+
     def extract_behavioral_evidence(
         self,
         video_path: str,
@@ -284,6 +306,17 @@ class MultimodalEvaluatorService:
                     for t in raw_turns
                 ]
 
+            vocal_tone = self._classify_vocal_tone(
+                pitch_variance=audio_features.pitch_variance,
+                energy_mean=audio_features.energy_mean,
+                enthusiasm_ratio=audio_features.enthusiasm_ratio,
+                hesitation_count=len(hesitation_events)
+            )
+
+            for t in turn_evidence:
+                if t.get("role") == "student":
+                    t["vocal_tone"] = vocal_tone
+
             total_time = round(time.perf_counter() - t_start, 2)
             realtime_multiplier = round(duration_sec / max(0.01, total_time), 2)
 
@@ -306,7 +339,10 @@ class MultimodalEvaluatorService:
                     "pitch_variance": round(audio_features.pitch_variance, 2),
                     "speech_ratio": round(audio_features.speech_ratio, 4),
                     "pause_ratio": round(audio_features.pause_ratio, 4),
-                    "total_hesitations_count": len(hesitation_events)
+                    "total_hesitations_count": len(hesitation_events),
+                    "energy_mean": round(float(audio_features.energy_mean), 4),
+                    "vocal_enthusiasm_ratio": round(float(audio_features.enthusiasm_ratio), 4),
+                    "vocal_tone": vocal_tone
                 },
                 "anomalies": {
                     "distraction_moments": [],
@@ -427,6 +463,17 @@ class MultimodalEvaluatorService:
         total_time = round(time.perf_counter() - t_start, 2)
         realtime_multiplier = round(duration_sec / max(0.01, total_time), 2)
 
+        vocal_tone = self._classify_vocal_tone(
+            pitch_variance=audio_features.pitch_variance,
+            energy_mean=audio_features.energy_mean,
+            enthusiasm_ratio=audio_features.enthusiasm_ratio,
+            hesitation_count=len(hesitation_moments)
+        )
+
+        for t in turn_evidence:
+            if t.get("role") == "student":
+                t["vocal_tone"] = vocal_tone
+
         return {
             "session_id": session_id,
             "status": "completed",
@@ -452,7 +499,10 @@ class MultimodalEvaluatorService:
                 "pitch_variance": round(audio_features.pitch_variance, 2),
                 "speech_ratio": round(audio_features.speech_ratio, 4),
                 "pause_ratio": round(audio_features.pause_ratio, 4),
-                "total_hesitations_count": len(hesitation_moments)
+                "total_hesitations_count": len(hesitation_moments),
+                "energy_mean": round(float(audio_features.energy_mean), 4),
+                "vocal_enthusiasm_ratio": round(float(audio_features.enthusiasm_ratio), 4),
+                "vocal_tone": vocal_tone
             },
             "anomalies": {
                 "distraction_moments": distraction_moments,
