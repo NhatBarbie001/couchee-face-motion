@@ -1,13 +1,16 @@
 # Face-Motion-GPU: Multimodal Sale AI Assessment API
 
-Tài liệu đặc tả kỹ thuật REST API đánh giá kỹ năng bán hàng đa phương thức (Vision + Audio + Fusion + Scoring) trên GPU.
+Tài liệu đặc tả kỹ thuật REST API đánh giá kỹ năng bán hàng & giao tiếp đa phương thức (Vision + Audio + Fusion + Prosody) trên GPU.
 
 ---
 
 ## 1. Tổng Quan Kiến Trúc
 
-* **Mục tiêu**: Đánh giá tự động năng lực bán hàng của học viên/nhân viên qua video roleplay (Giao tiếp mắt, Nụ cười, Tư thế đầu, Lắng nghe tích cực, Ngữ điệu giọng nói, Nhận diện tiếng Việt ASR).
-* **Cơ chế Warm VRAM**: Nạp sẵn 5 mô hình AI vào GPU VRAM khi khởi động server, **triệt tiêu 4.5s cold-start**, tốc độ đạt **4.0x - 7.0x Real-time**.
+* **Mục tiêu**: Đóng vai trò là **Sensory Perception Engine** (Bộ cảm biến giác quan khách quan) phân tích video/audio buổi học Roleplay, bóc tách các bằng chứng hành vi (Giao tiếp mắt, Nụ cười, Cúi/ngẩng đầu, Lắng nghe tích cực, Ngữ điệu, Âm lượng, Tốc độ nói WPM) phục vụ cho LLM-as-a-Judge hoặc Dashboard chấm điểm.
+* **Cơ chế Warm VRAM**: Nạp sẵn các mô hình AI vào GPU VRAM khi khởi động server, **triệt tiêu 4.5s cold-start**, tốc độ đạt **6.0x – 19.0x Real-time**.
+* **Hỗ trợ 2 chế độ**:
+  1. `media_type == "video"`: Phân tích toàn diện cả Hình ảnh (Webcam) + Giọng nói (Microphone).
+  2. `media_type == "audio"`: Tự động bỏ qua Vision GPU khi học viên tắt camera, chỉ phân tích âm thanh siêu tốc (~19x Real-time).
 * **Base URL**: `http://<SERVER_IP>:8000`
 * **Swagger UI (Interactive Docs)**: `http://<SERVER_IP>:8000/docs`
 
@@ -15,239 +18,287 @@ Tài liệu đặc tả kỹ thuật REST API đánh giá kỹ năng bán hàng 
 
 ## 2. Danh Sách Endpoints
 
-| Phương thức | Endpoint | Định dạng Input | Mục đích |
-| :---: | :--- | :---: | :--- |
-| `GET` | `/api/v1/health` | Không | Kiểm tra trạng thái GPU VRAM & Warm state |
-| `POST` | `/api/v1/analyze` | `multipart/form-data` | Upload trực tiếp file video (Web/Mobile App) |
-| `POST` | `/api/v1/analyze-json` | `application/json` | Truyền đường dẫn file trên server/shared storage |
-| `GET` | `/static/results/{file}` | URL Path | Xem/Tải video annotated & báo cáo Markdown |
+| Phiên bản | Phương thức | Endpoint | Định dạng Input | Mục đích |
+| :---: | :---: | :--- | :---: | :--- |
+| **v2 (Khuyên dùng)** | `POST` | `/api/v2/analyze` | `application/json` | **Sensory Engine v2**: Bóc tách bằng chứng hành vi theo `turn_markers` (cho LLM / Couchee) |
+| **System** | `GET` | `/api/v1/health` | Không | Kiểm tra trạng thái GPU VRAM & Warm state |
+| **v1 (Legacy)** | `POST` | `/api/v1/analyze-json` | `application/json` | Phân tích video đường dẫn file (Chấm điểm cứng 100đ) |
+| **v1 (Legacy)** | `POST` | `/api/v1/analyze` | `multipart/form-data` | Upload trực tiếp file video từ Form |
+| **Static** | `GET` | `/static/results/{file}` | URL Path | Tải video annotated & báo cáo |
 
 ---
 
-## 3. Chi Tiết Các Endpoints
+## 3. Chi Tiết API v2: Sensory Engine (`POST /api/v2/analyze`)
 
-### 3.1. Health Check & GPU Status
-Kiểm tra server đã sẵn sàng nhận request và dung lượng VRAM đang dùng.
+Endpoint này được thiết kế dành riêng cho **Hệ thống Roleplay Coach Couchee**, tiếp nhận đường dẫn file và danh sách các mốc thời gian hội thoại (`turn_markers`), trả về bằng chứng giác quan khách quan mà **không gán cứng điểm số**.
 
-* **Request**: `GET /api/v1/health`
-* **Response (200 OK)**:
-```json
-{
-  "status": "healthy",
-  "service_warm": true,
-  "cuda_available": true,
-  "gpu_name": "NVIDIA GeForce RTX 3060",
-  "vram_used_mb": 1420.5,
-  "vram_total_mb": 12288.0
-}
-```
-
----
-
-### 3.2. Phân Tích Video Qua Đường Dẫn File (`POST /api/v1/analyze-json`)
-*Thích hợp nhất cho Microservices nội bộ cùng chia sẻ ổ đĩa hoặc NFS/S3 mount.*
+### 3.1. Request Body (`AnalyzeRequestV2`)
 
 * **Headers**: `Content-Type: application/json`
-* **Request Body**:
+* **Cấu trúc JSON**:
 ```json
 {
-  "video_path": "/home/dinhnhat/Face-motion-gpu/video/tiktok3.mp4",
-  "audio_path": null,
+  "session_id": "roleplay_sales_38s",
+  "video_path": "/home/dinhnhat/couchee-face-motion/video/tiktok3.mp4",
+  "media_type": "video",
   "step": 6,
   "batch_size": 32,
-  "save_video": false,
-  "show_hud": true,
-  "session_id": "tiktok3"
+  "include_timeline_1s": false,
+  "turn_markers": [
+    {
+      "role": "student",
+      "start_sec": 0.0,
+      "end_sec": 6.5,
+      "text": "Dạ em chào anh ạ, em là Tuấn chuyên viên tư vấn bên Couchee!"
+    },
+    {
+      "role": "ai",
+      "start_sec": 6.5,
+      "end_sec": 13.0,
+      "text": "Chào em, bên anh đang muốn tìm giải pháp đào tạo bán hàng bằng AI."
+    }
+  ]
 }
 ```
 
 #### Bảng tham số:
-| Tham số | Kiểu | Mặc định | Ý nghĩa |
-| :--- | :---: | :---: | :--- |
-| `video_path` | `string` | *Bắt buộc* | Đường dẫn tuyệt đối tới file video trên server |
-| `step` | `int` | `2` | Bước nhảy frame. `step=6` nhanh gấp ~3 lần `step=2` mà vẫn chuẩn xác |
-| `batch_size` | `int` | `32` | Số khuôn mặt đưa vào GPU cùng lúc (Khuyên dùng: `32` cho GPU 8-12GB) |
-| `save_video` | `bool` | `false` | `true`: render video có thanh HUD cảm xúc; `false`: chỉ lấy dữ liệu JSON (nhanh nhất) |
-| `show_hud` | `bool` | `true` | Vẽ overlay bảng chỉ số HUD lên video (nếu `save_video=true`) |
-| `session_id` | `string` | `null` | Tên phiên đánh giá (mặc định lấy theo tên file video) |
+| Tham số | Kiểu | Mặc định | Bắt buộc | Ý nghĩa |
+| :--- | :---: | :---: | :---: | :--- |
+| `video_path` | `string` | — | **Có** | Đường dẫn tuyệt đối tới file `.mp4`, `.webm`, `.wav` trên server |
+| `session_id` | `string` | `null` | Không | Mã phiên học (mặc định lấy theo tên file) |
+| `media_type` | `string` | `"video"` | Không | `"video"` (chạy cả cam & mic) hoặc `"audio"` (chế độ tắt cam) |
+| `turn_markers` | `list` | `[]` | Không | Danh sách các lượt đối đáp giữa học viên và AI |
+| `turn_markers[].role` | `string` | — | **Có** | `'student'` (học viên nói) hoặc `'ai'` (AI khách hàng nói) |
+| `turn_markers[].start_sec` | `float` | — | **Có** | Thời điểm bắt đầu câu nói (tính bằng giây) |
+| `turn_markers[].end_sec` | `float` | — | **Có** | Thời điểm kết thúc câu nói (tính bằng giây) |
+| `turn_markers[].text` | `string` | `null` | Không | Lời thoại câu nói nếu có |
+| `step` | `int` | `6` | Không | Bước nhảy frame video. `step=6` nhanh gấp ~3 lần `step=2` mà vẫn chính xác |
+| `batch_size` | `int` | `32` | Không | Kích thước batch đưa vào GPU (khuyên dùng: 32) |
+| `include_timeline_1s` | `bool` | `false` | Không | `true`: trả về mảng dữ liệu chi tiết từng giây; `false`: chỉ lấy tổng quan |
 
 ---
 
-### 3.3. Phân Tích Video Qua Upload Trực Tiếp (`POST /api/v1/analyze`)
-*Thích hợp cho Web Frontend, Mobile App hoặc Postman gửi thẳng video lên.*
-
-* **Headers**: `Content-Type: multipart/form-data`
-* **Form Fields**:
-  * `file`: File video đính kèm (`.mp4`, `.mov`, `.avi`...).
-  * `step`: `6` (tùy chọn).
-  * `batch_size`: `32` (tùy chọn).
-  * `save_video`: `false` (tùy chọn).
-
----
-
-## 4. Cấu Trúc Dữ Liệu Phản Hồi (Response JSON)
+### 3.2. Response Body (`BehavioralEvidenceResponse`)
 
 ```json
 {
-  "session_id": "tiktok3",
-  "metadata": {
-    "session_id": "tiktok3",
-    "duration_seconds": 38.6,
-    "total_frames_analyzed": 193,
-    "total_turns": 5,
-    "speaking_turns": 3,
-    "listening_turns": 2,
-    "total_words_spoken": 140,
-    "annotated_video_path": null
-  },
-  "overall_evaluation": {
-    "total_score": 70.5,
-    "max_score": 100.0,
-    "grade": "A (Thành Thạo)",
-    "breakdown": {
-      "confidence_score": 21.0,
-      "active_listening_score": 22.0,
-      "vocal_dynamism_score": 18.0,
-      "facial_warmth_score": 9.5
-    },
-    "strengths": [
-      "Tự tin, mạch lạc, hầu như không có khoảng ngập ngừng lúng túng.",
-      "Gật đầu đồng thuận rất tốt (21 lần), thể hiện sự lắng nghe và thấu hiểu."
-    ],
-    "areas_for_improvement": [
-      "Tỷ lệ nhìn lơ đễnh đi chỗ khác khá cao (39%).",
-      "Gương mặt còn nghiêm nghị, nên mỉm cười chào và cảm ơn khách hàng."
-    ],
-    "criteria_details": {
-      "confidence": { "score": 21.0, "max": 25, "feedback": ["Cần tăng thời lượng nhìn thẳng."] },
-      "active_listening": { "score": 22.0, "max": 25, "feedback": [] },
-      "vocal_dynamism": { "score": 18.0, "max": 25, "feedback": ["Cần thêm nhiệt huyết vào chất giọng."] },
-      "facial_warmth": { "score": 9.5, "max": 25, "feedback": ["Cần mỉm cười tươi tắn hơn."] }
-    }
-  },
-  "final_behavioral_metrics": {
-    "facial_emotions": {
-      "happy_ratio": 0.12,
-      "neutral_ratio": 0.65,
-      "sad_ratio": 0.10,
-      "negative_ratio": 0.23,
-      "average_valence": 0.18
-    },
-    "attention_and_focus": {
-      "focus_ratio": 0.85,
-      "distracted_ratio": 0.15,
-      "longest_focus_streak_seconds": 12.4,
-      "longest_distraction_seconds": 2.8,
-      "longest_distraction_episode": {
-        "start_time": 15.2,
-        "end_time": 18.0,
-        "duration": 2.8,
-        "reason": "Cúi đầu nhìn xuống (Pitch: -18.2°); Mắt hướng về 'down'"
-      },
-      "eye_contact_ratio": 0.78,
-      "nodding_count": 21
-    },
-    "vocal_interaction": {
-      "speech_ratio": 0.75,
-      "pause_ratio": 0.25,
-      "speech_rate_wps": 3.6,
-      "pitch_variance": 42.5,
-      "vocal_enthusiasm_ratio": 0.18
-    }
-  },
-  "key_behavioral_events": {
-    "longest_distraction": {
-      "duration_seconds": 2.8,
-      "start_time": 15.2,
-      "end_time": 18.0,
-      "reason": "Cúi đầu nhìn xuống (Pitch: -18.2°); Mắt hướng về 'down'"
-    },
-    "distraction_episodes": [ ... ],
-    "hesitation_events": [ ... ],
-    "nodding_moments": [ ... ]
-  },
-  "conversational_turns": [
-    {
-      "turn_id": 1,
-      "type": "speaking",
-      "start_time": 0.0,
-      "end_time": 30.15,
-      "duration": 30.15,
-      "text": "MỘT CON TÔM HÙM BÔNG BÊN ANH...",
-      "vision": { "focus_ratio": 0.67, "eye_contact_ratio": 0.69, "dominant_emotion": "neutral" },
-      "audio": { "is_speaking": true, "word_count": 131 }
-    }
-  ],
-  "timeline_1s": [
-    {
-      "second": 0,
-      "time_range": [0.0, 1.0],
-      "vision": { "is_focused": true, "dominant_emotion": "neutral", "valence": 0.1, "head_yaw": 2.1, "head_pitch": -1.0, "gaze": "camera" },
-      "audio": { "is_speech": true, "pitch": 210.5, "energy": 0.15, "tone": "neutral" }
-    }
-  ],
-  "files": {
-    "json_report": "results/tiktok3_report.json",
-    "markdown_report": "results/tiktok3_report.md",
-    "annotated_video_url": "/static/results/tiktok3_annotated.mp4"
-  },
+  "session_id": "roleplay_sales_38s",
+  "status": "completed",
+  "media_type": "video",
+  "duration_seconds": 38.6,
   "performance": {
-    "execution_time_sec": 6.82,
-    "realtime_multiplier": "5.66x"
-  }
+    "execution_time_sec": 6.64,
+    "realtime_multiplier": "5.81x"
+  },
+  "overall_metrics": {
+    "eye_contact_ratio": 0.6114,
+    "distracted_ratio": 0.4145,
+    "nodding_count": 12,
+    "smile_ratio": 0.0,
+    "dominant_emotions": {
+      "happy": 0.0,
+      "neutral": 0.1865,
+      "sad": 0.3264,
+      "negative": 0.715,
+      "average_valence": -0.633
+    },
+    "speech_rate_wpm": 217.7,
+    "pitch_variance": 9000.16,
+    "speech_ratio": 0.8367,
+    "pause_ratio": 0.1633,
+    "total_hesitations_count": 1,
+    "energy_mean": 0.0482,
+    "vocal_enthusiasm_ratio": 0.1845,
+    "vocal_tone": "confident"
+  },
+  "anomalies": {
+    "distraction_moments": [
+      {
+        "start_sec": 28.8,
+        "end_sec": 31.6,
+        "duration": 2.8,
+        "reason": "Quay đầu sang phải (Yaw: 19.2°); Mắt hướng về 'right'"
+      }
+    ],
+    "hesitation_moments": [
+      {
+        "start_sec": 32.91,
+        "end_sec": 38.0,
+        "duration": 5.09,
+        "reason": "Ngập ngừng ngắt quãng kéo dài 5.09s"
+      }
+    ],
+    "nodding_moments": [
+      {
+        "timestamp": 7.0,
+        "amplitude": 11.4
+      }
+    ]
+  },
+  "turn_evidence": [
+    {
+      "turn_index": 1,
+      "role": "student",
+      "start_sec": 0.0,
+      "end_sec": 6.5,
+      "duration_sec": 6.5,
+      "text": "Dạ em chào anh ạ, em là Tuấn chuyên viên tư vấn bên Couchee!",
+      "eye_contact_ratio": 0.8182,
+      "smile_ratio": 0.0,
+      "dominant_emotion": "neutral",
+      "nodding_count": null,
+      "attentive_gaze_ratio": null,
+      "speech_rate_wpm": 212.3,
+      "hesitation_seconds": 0.0,
+      "is_speaking": true,
+      "energy_mean": 0.0512,
+      "vocal_tone": "confident"
+    },
+    {
+      "turn_index": 2,
+      "role": "ai",
+      "start_sec": 6.5,
+      "end_sec": 13.0,
+      "duration_sec": 6.5,
+      "text": "Chào em, bên anh đang muốn tìm giải pháp đào tạo bán hàng bằng AI.",
+      "eye_contact_ratio": 0.7241,
+      "smile_ratio": 0.0,
+      "dominant_emotion": "neutral",
+      "nodding_count": 3,
+      "attentive_gaze_ratio": 0.7576,
+      "speech_rate_wpm": null,
+      "hesitation_seconds": 0.0,
+      "is_speaking": false,
+      "energy_mean": null,
+      "vocal_tone": null
+    }
+  ],
+  "timeline_1s": null
 }
 ```
+
+---
+
+### 3.3. Giải Thích Ý Nghĩa Các Chỉ Số Giác Quan
+
+#### 1. Nhóm chỉ số toàn phiên (`overall_metrics`)
+* **`eye_contact_ratio`**: Tỷ lệ duy trì ánh mắt nhìn thẳng vào camera ($0.0 \rightarrow 1.0$). Chuẩn bán hàng: $\ge 0.70$ (70%).
+* **`distracted_ratio`**: Tỷ lệ thời gian quay đầu hoặc nhìn lơ đãng ra ngoài. Chuẩn: $\le 0.20$ (20%).
+* **`nodding_count`**: Tổng số lần gật đầu thể hiện sự tiếp thu/đồng thuận (đã lọc với ngưỡng biên độ $\ge 11.0^\circ$).
+* **`smile_ratio`**: Tỷ lệ thời gian mỉm cười thân thiện ($0.0 \rightarrow 1.0$).
+* **`energy_mean`**: Năng lượng âm lượng trung bình RMS. Đo mức độ **nói to, rõ ràng, nội lực** hay **nói lí nhí, thì thầm**.
+* **`vocal_enthusiasm_ratio`**: Tỷ lệ giọng nói hào hứng, nhiệt huyết.
+* **`vocal_tone`**: Phân loại chất giọng thực tế thành **4 nhóm chuẩn**:
+  * `'enthusiastic'`: Giọng hào hứng, nhiệt huyết, biến thiên cao độ sinh động.
+  * `'confident'`: Giọng đĩnh đạc, tự tin, trường âm và tốc độ cân bằng chuẩn mực.
+  * `'monotone'`: Giọng đều đều buồn ngủ, thiếu nhấn nhá (pitch variance $< 2500$).
+  * `'nervous'`: Giọng run rẩy, cao độ bất thường hoặc ngập ngừng nhiều.
+* **`speech_rate_wpm`**: Tốc độ nói tính bằng Từ/Phút (Words Per Minute). Chuẩn lý tưởng: 140 – 180 WPM.
+* **`speech_ratio` / `pause_ratio`**: Tỷ lệ thời lượng nói so với thời lượng im lặng/lắng nghe.
+
+#### 2. Nhóm bằng chứng theo lượt thoại (`turn_evidence`)
+* **Lượt Học viên (`student`)**: Đo `eye_contact_ratio`, `smile_ratio`, `speech_rate_wpm`, `energy_mean`, `vocal_tone`, `hesitation_seconds`.
+* **Lượt AI (`ai`)**: Đo thái độ lắng nghe của học viên: `attentive_gaze_ratio` (mắt chú ý), `nodding_count` (số lần gật đầu), `smile_ratio` (nụ cười khi lắng nghe).
+
+#### 3. Nhóm khoảnh khắc bất thường (`anomalies`)
+* **`distraction_moments`**: Mốc giây chính xác học viên quay đầu hoặc liếc mắt đi chỗ khác kèm góc độ và lý do (dùng để gắn cờ trên video seekbar).
+* **`hesitation_moments`**: Mốc giây học viên bị ngắc ngứ, ngập ngừng kéo dài $>1.5s$.
+* **`nodding_moments`**: Danh sách chi tiết từng cú gật đầu kèm thời điểm và biên độ góc.
+
+---
+
+## 4. API v1 (Legacy): Chấm Điểm Cứng 100đ
+
+### 4.1. Endpoint `POST /api/v1/analyze-json`
+Nhận đường dẫn file video và tự động tính điểm 100đ theo rubric truyền thống.
+
+* **Request Body**:
+```json
+{
+  "video_path": "/home/dinhnhat/couchee-face-motion/video/tiktok3.mp4",
+  "step": 6,
+  "batch_size": 32,
+  "save_video": false,
+  "show_hud": true
+}
+```
+
+* **Response Trả về**:
+  * `total_score`: Điểm tổng kết (thang 100).
+  * `grade`: Xếp loại (`A (Thành Thạo)`, `B`, `C`...).
+  * `breakdown`: Điểm 4 tiêu chí (Độ tự tin 25đ, Lắng nghe tích cực 25đ, Ngữ điệu giọng nói 25đ, Sự ấm áp nét mặt 25đ).
+  * `strengths` & `areas_for_improvement`: Nhận xét mẫu.
 
 ---
 
 ## 5. Ví Dụ Tích Hợp (Code Snippets)
 
-### 5.1. Gọi bằng cURL (Terminal)
-```bash
-curl -X POST "http://localhost:8000/api/v1/analyze-json" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_path": "/home/dinhnhat/Face-motion-gpu/video/tiktok3.mp4",
-    "step": 6,
-    "batch_size": 32,
-    "save_video": false
-  }'
-```
+### 5.1. Test Bằng Python (Requests)
 
-### 5.2. Gọi bằng Python (Microservice / Backend)
 ```python
 import requests
 
-url = "http://localhost:8000/api/v1/analyze-json"
+url = "http://localhost:8000/api/v2/analyze"
 payload = {
-    "video_path": "/home/dinhnhat/Face-motion-gpu/video/tiktok3.mp4",
-    "step": 6,
-    "batch_size": 32,
-    "save_video": False
+    "session_id": "session_001",
+    "video_path": "/path/to/video.mp4",
+    "media_type": "video", # hoặc "audio" nếu tắt cam
+    "turn_markers": [
+        {"role": "student", "start_sec": 0.0, "end_sec": 10.0, "text": "Lời chào"},
+        {"role": "ai", "start_sec": 10.0, "end_sec": 20.0, "text": "Phản hồi"}
+    ]
 }
 
 res = requests.post(url, json=payload).json()
-print(f"Điểm số: {res['overall_evaluation']['total_score']}/100 ({res['overall_evaluation']['grade']})")
-print(f"Thời gian chạy: {res['performance']['execution_time_sec']}s ({res['performance']['realtime_multiplier']})")
+print("Tông giọng:", res["overall_metrics"]["vocal_tone"])
+print("Tốc độ nói:", res["overall_metrics"]["speech_rate_wpm"], "WPM")
+print("Giao tiếp mắt:", res["overall_metrics"]["eye_contact_ratio"] * 100, "%")
 ```
 
-### 5.3. Gọi bằng Node.js / JavaScript (Frontend / Backend)
+### 5.2. Test Bằng cURL
+
+```bash
+curl -X POST "http://localhost:8000/api/v2/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_path": "/home/dinhnhat/couchee-face-motion/video/tiktok3.mp4",
+    "media_type": "video",
+    "turn_markers": [
+      {"role": "student", "start_sec": 0.0, "end_sec": 15.0},
+      {"role": "ai", "start_sec": 15.0, "end_sec": 30.0}
+    ]
+  }'
+```
+
+### 5.3. Tích Hợp Từ Couchee Backend (Moleculer Action)
+
 ```javascript
 const axios = require('axios');
 
-async function evaluateVideo() {
-  const res = await axios.post('http://localhost:8000/api/v1/analyze-json', {
-    video_path: '/home/dinhnhat/Face-motion-gpu/video/tiktok3.mp4',
-    step: 6,
-    batch_size: 32,
-    save_video: false
-  });
+module.exports = {
+  name: 'roleplay.facemotion',
+  actions: {
+    async extractBehavioralEvidence(ctx) {
+      const { videoPath, mediaType, turnMarkers, sessionId } = ctx.params;
+      const gpuUrl = process.env.FACE_MOTION_GPU_URL || 'http://localhost:8000';
 
-  const report = res.data;
-  console.log(`Điểm: ${report.overall_evaluation.total_score} - Hạng: ${report.overall_evaluation.grade}`);
-  console.log(`Lượt nói: ${report.metadata.total_turns} lượt`);
-}
-evaluateVideo();
+      try {
+        const response = await axios.post(`${gpuUrl}/api/v2/analyze`, {
+          session_id: sessionId,
+          video_path: videoPath,
+          media_type: mediaType || 'video',
+          turn_markers: turnMarkers || [],
+          include_timeline_1s: false
+        }, { timeout: 60000 });
+
+        return response.data;
+      } catch (err) {
+        this.logger.warn('[Face-motion-gpu] Offline or error:', err.message);
+        return null; // Fallback an toàn, không làm gián đoạn bài chấm của LLM
+      }
+    }
+  }
+};
 ```
 
 ---
@@ -256,7 +307,7 @@ evaluateVideo();
 
 | Mã lỗi | Nguyên nhân | Hướng xử lý |
 | :---: | :--- | :--- |
-| `400 Bad Request` | Thiếu cả `file` và `video_path` | Cung cấp ít nhất 1 nguồn video |
-| `404 Not Found` | Đường dẫn `video_path` không tồn tại trên server | Kiểm tra lại đường dẫn file trên ổ đĩa |
-| `503 Service Unavailable` | Các model đang trong quá trình nạp vào GPU | Đợi server warm-up xong (~4s) rồi gọi lại |
-| `500 Internal Error` | Lỗi trong quá trình giải mã video hoặc inference | Kiểm tra định dạng codec video hoặc log server |
+| `404 Not Found` | Đường dẫn `video_path` không tồn tại trên server Linux | Kiểm tra lại đường dẫn file trên ổ đĩa |
+| `503 Service Unavailable` | Các model đang trong quá trình warm-up nạp vào GPU | Đợi server warm-up xong (~4 giây) rồi gọi lại |
+| `500 Internal Error` | File media hỏng hoặc codec không hỗ trợ | Kiểm tra định dạng file (khuyên dùng `.mp4`, `.webm`, `.wav`) |
+| `Connection Refused` | Server `server.py` chưa được bật trên server | Kích hoạt virtualenv và chạy `python server.py` |
