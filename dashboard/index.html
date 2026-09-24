@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Couchee Face-Motion Sensory Dashboard (Strict API Only)</title>
+  <title>Couchee Face-Motion Sensory Dashboard (Raw JSON & Visual)</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <style>
     :root {
@@ -101,6 +101,32 @@
       flex-wrap: wrap;
     }
 
+    .view-mode-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 3px;
+    }
+
+    .tab-btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    }
+
     .server-input-group {
       display: flex;
       align-items: center;
@@ -123,7 +149,7 @@
       color: #fff;
       font-size: 0.82rem;
       outline: none;
-      width: 190px;
+      width: 170px;
     }
 
     .btn {
@@ -169,6 +195,16 @@
       max-width: 1800px;
       margin: 0 auto;
       width: 100%;
+    }
+
+    .raw-json-container {
+      display: none;
+      padding: 24px 28px;
+      flex: 1;
+      max-width: 1800px;
+      margin: 0 auto;
+      width: 100%;
+      flex-direction: column;
     }
 
     @media (max-width: 1100px) {
@@ -363,7 +399,7 @@
       border-radius: 3px;
     }
 
-    /* ANOMALIES LIST (CLICK TO SEEK) */
+    /* ANOMALIES LIST */
     .anomalies-list {
       display: flex;
       flex-direction: column;
@@ -550,6 +586,28 @@
       color: #e2e8f0;
     }
 
+    /* RAW JSON VIEWER STYLES */
+    .json-code-box {
+      background: #06090e;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      overflow-x: auto;
+      max-height: 720px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .json-key { color: var(--accent-cyan); font-weight: 600; }
+    .json-string { color: var(--accent-green); }
+    .json-number { color: var(--accent-amber); }
+    .json-boolean { color: var(--primary-light); font-weight: 600; }
+    .json-null { color: var(--accent-rose); font-weight: 600; }
+
     /* LOADING OVERLAY */
     .loading-overlay {
       position: fixed;
@@ -619,6 +677,12 @@
     </div>
 
     <div class="header-controls">
+      <!-- VIEW MODE SWITCHER -->
+      <div class="view-mode-tabs">
+        <button class="tab-btn active" id="tabVisual" onclick="switchViewMode('visual')">📊 Trực Quan</button>
+        <button class="tab-btn" id="tabRawJson" onclick="switchViewMode('json')">💻 JSON Thô</button>
+      </div>
+
       <!-- Cấu hình Server URL -->
       <div class="server-input-group" title="Địa chỉ server GPU FastAPI">
         <label>Server API:</label>
@@ -632,7 +696,7 @@
         📁 Chọn Video
       </button>
 
-      <span id="selectedFileName" style="font-size: 0.8rem; color: var(--text-muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+      <span id="selectedFileName" style="font-size: 0.8rem; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
         Chưa chọn file
       </span>
 
@@ -643,8 +707,8 @@
     </div>
   </header>
 
-  <!-- MAIN DASHBOARD -->
-  <div class="dashboard-container">
+  <!-- 1. DASHBOARD CONTAINER TRỰC QUAN -->
+  <div class="dashboard-container" id="visualDashboardView">
     
     <!-- CỘT TRÁI: VIDEO + TIMELINE + DANH SÁCH XAO NHÃNG -->
     <div class="left-col">
@@ -766,6 +830,25 @@
 
   </div>
 
+  <!-- 2. RAW JSON CONTAINER -->
+  <div class="raw-json-container" id="rawJsonView">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          💻 Dữ Liệu JSON Thô Nguyên Bản (API Response)
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-secondary" onclick="copyRawJson()">📋 Sao Chép JSON</button>
+          <button class="btn btn-secondary" onclick="downloadRawJson()">💾 Tải File JSON</button>
+        </div>
+      </div>
+      
+      <div class="json-code-box" id="rawJsonDisplay">
+        <span style="color: var(--text-muted);">// Chưa có dữ liệu API. Hãy chọn video và bấm "Phân Tích Video" để nhận JSON thô tại đây...</span>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Khởi tạo URL server API mặc định
     const serverInput = document.getElementById('serverUrlInput');
@@ -783,6 +866,26 @@
     const timelineTrack = document.getElementById('timelineTrack');
     const playhead = document.getElementById('playhead');
     const timeDisplay = document.getElementById('timeDisplay');
+
+    // Chuyển đổi giữa chế độ Trực Quan và JSON Thô
+    function switchViewMode(mode) {
+      const visualView = document.getElementById('visualDashboardView');
+      const jsonView = document.getElementById('rawJsonView');
+      const tabVisual = document.getElementById('tabVisual');
+      const tabRawJson = document.getElementById('tabRawJson');
+
+      if (mode === 'json') {
+        visualView.style.display = 'none';
+        jsonView.style.display = 'flex';
+        tabVisual.classList.remove('active');
+        tabRawJson.classList.add('active');
+      } else {
+        jsonView.style.display = 'none';
+        visualView.style.display = 'grid';
+        tabRawJson.classList.remove('active');
+        tabVisual.classList.add('active');
+      }
+    }
 
     // Chọn file video
     document.getElementById('videoFileInput').addEventListener('change', (e) => {
@@ -851,8 +954,10 @@
         const data = await response.json();
         console.log("[API Response Data]:", data);
 
-        // Hiển thị trực tiếp dữ liệu API lên giao diện (KHÔNG MOCK, KHÔNG FALLBACK MẪU)
+        // Hiển thị trực tiếp dữ liệu API lên cả 2 giao diện (Trực quan + JSON Thô)
         renderEvidence(data);
+        renderRawJson(data);
+
         alert(`Phân tích video thành công trong ${seconds}s!\nSố lượt nói trích xuất: ${data.turn_evidence ? data.turn_evidence.length : 0}`);
 
       } catch (err) {
@@ -861,6 +966,56 @@
         console.error("Lỗi API:", err);
         alert(`Gọi API thất bại:\n${err.message}\n\nHãy kiểm tra lại server FastAPI tại '${baseUrl}' đã bật chưa.`);
       }
+    }
+
+    // Syntax Highlight cho JSON Thô
+    function highlightJson(jsonObj) {
+      const jsonString = JSON.stringify(jsonObj, null, 2);
+      return jsonString
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+          let cls = 'json-number';
+          if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+              cls = 'json-key';
+            } else {
+              cls = 'json-string';
+            }
+          } else if (/true|false/.test(match)) {
+            cls = 'json-boolean';
+          } else if (/null/.test(match)) {
+            cls = 'json-null';
+          }
+          return '<span class="' + cls + '">' + match + '</span>';
+        });
+    }
+
+    function renderRawJson(data) {
+      const box = document.getElementById('rawJsonDisplay');
+      box.innerHTML = highlightJson(data);
+    }
+
+    function copyRawJson() {
+      if (!currentEvidence) {
+        alert("Chưa có dữ liệu JSON để sao chép!");
+        return;
+      }
+      navigator.clipboard.writeText(JSON.stringify(currentEvidence, null, 2));
+      alert("Đã sao chép toàn bộ JSON thô vào Clipboard!");
+    }
+
+    function downloadRawJson() {
+      if (!currentEvidence) {
+        alert("Chưa có dữ liệu JSON để tải về!");
+        return;
+      }
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentEvidence, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `response_${Date.now()}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
     }
 
     // Format mm:ss
@@ -879,7 +1034,7 @@
       }
     }
 
-    // HIỂN THỊ DỮ LIỆU THẬT TỪ API (KHÔNG FALLBACK MOCK)
+    // HIỂN THỊ DỮ LIỆU THẬT TỪ API ON VISUAL DASHBOARD
     function renderEvidence(data) {
       currentEvidence = data;
       const duration = data.duration_seconds || (video.duration ? video.duration : 0);
@@ -1020,7 +1175,6 @@
           const wpmStr = (turn.speech_rate_wpm !== undefined && turn.speech_rate_wpm !== null) ? Math.round(turn.speech_rate_wpm) : '--';
           const toneStr = turn.vocal_tone || '--';
           
-          // Lời thoại thực tế từ ASR (KHÔNG dùng fallback text mẫu)
           const turnText = turn.text ? turn.text : '';
 
           bubble.innerHTML = `
