@@ -62,6 +62,10 @@ app.add_middleware(
 # Mount static files to serve annotated videos and markdown reports
 app.mount("/static/results", StaticFiles(directory=RESULTS_DIR), name="results")
 
+DASHBOARD_DIR = os.path.join(BASE_DIR, "dashboard")
+if os.path.exists(DASHBOARD_DIR):
+    app.mount("/dashboard", StaticFiles(directory=DASHBOARD_DIR, html=True), name="dashboard")
+
 
 class AnalyzePathRequest(BaseModel):
     video_path: str = Field(..., description="Absolute or relative path to the video file on host/shared storage.")
