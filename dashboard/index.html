@@ -870,6 +870,13 @@
   </div>
 
   <script>
+    // Safe float formatter helper
+    function safeFix(val, decimals = 1) {
+      if (val === undefined || val === null) return "0.0";
+      const n = parseFloat(val);
+      return isNaN(n) ? "0.0" : n.toFixed(decimals);
+    }
+
     // Khởi tạo URL server API mặc định
     const serverInput = document.getElementById('serverUrlInput');
     if (window.location.origin && window.location.origin.startsWith('http')) {
@@ -968,51 +975,58 @@
       formData.append('batch_size', '32');
       formData.append('include_timeline_1s', 'true');
 
+      let response = null;
       try {
         console.log(`[API Call] Sending request to: ${apiUrl}`);
-        const response = await fetch(apiUrl, {
+        response = await fetch(apiUrl, {
           method: 'POST',
           body: formData
         });
-
+      } catch (networkErr) {
         clearInterval(interval);
         overlay.style.display = 'none';
-
-        if (!response.ok) {
-          const errText = await response.text();
-          const errObj = { error: `HTTP ${response.status}`, details: errText, target_url: apiUrl };
-          renderRawJson(errObj);
-          showError(`Server trả về mã lỗi HTTP ${response.status}: ${errText}`);
-          return;
-        }
-
-        // Nhận dữ liệu THẬT 100% từ Server
-        const data = await response.json();
-        console.log("[API Response Data]:", data);
-
-        // Hiển thị trực tiếp dữ liệu API lên cả 2 giao diện (Trực quan + JSON Thô)
-        renderEvidence(data);
-        renderRawJson(data);
-
-        alert(`Phân tích video thành công trong ${seconds}s!\nSố lượt nói trích xuất: ${data.turn_evidence ? data.turn_evidence.length : 0}`);
-
-      } catch (err) {
-        clearInterval(interval);
-        overlay.style.display = 'none';
-        console.error("Lỗi kết nối API:", err);
-
+        console.error("Lỗi mạng khi gọi fetch API:", networkErr);
         const errorInfo = {
           status: "failed",
-          error_message: err.message || "Failed to fetch",
-          target_url: apiUrl,
-          troubleshooting: [
-            `1. Địa chỉ Server API '${baseUrl}' có thể không chính xác. Nếu server chạy trên Linux remote (k8sbiai2), hãy điền 'http://<IP_LINUX_SERVER>:8000'.`,
-            `2. Server FastAPI ('python server.py') có thể chưa được bật hoặc chưa mở port 8000.`,
-            `3. Khuyên dùng đường dẫn trực tiếp: mở 'http://<IP_LINUX_SERVER>:8000/dashboard' trên trình duyệt.`
-          ]
+          error_message: networkErr.message || "Failed to fetch",
+          target_url: apiUrl
         };
         renderRawJson(errorInfo);
         showError(`Không kết nối được tới Server API tại: ${apiUrl}. Vui lòng kiểm tra lại IP Server!`);
+        return;
+      }
+
+      clearInterval(interval);
+      overlay.style.display = 'none';
+
+      if (!response.ok) {
+        const errText = await response.text();
+        const errObj = { error: `HTTP ${response.status}`, details: errText, target_url: apiUrl };
+        renderRawJson(errObj);
+        showError(`Server trả về mã lỗi HTTP ${response.status}: ${errText}`);
+        return;
+      }
+
+      // 1. Parse JSON response
+      let data = null;
+      try {
+        data = await response.json();
+        console.log("[API Response Data received]:", data);
+      } catch (jsonErr) {
+        showError(`Lỗi parse JSON từ phản hồi của Server: ${jsonErr.message}`);
+        return;
+      }
+
+      // 2. Cập nhật giao diện JSON Thô trước tiên (Đảm bảo 100% dữ liệu nguyên bản luôn có)
+      renderRawJson(data);
+
+      // 3. Render giao diện Trực quan
+      try {
+        renderEvidence(data);
+        alert(`Phân tích video thành công trong ${seconds}s!\nSố lượt nói trích xuất: ${data.turn_evidence ? data.turn_evidence.length : 0}`);
+      } catch (renderErr) {
+        console.error("Lỗi khi render giao diện trực quan:", renderErr);
+        showError(`Đã nhận được JSON thành công nhưng có lỗi giao diện: ${renderErr.message}. Bạn có thể bấm 'JSON Thô' để xem dữ liệu.`);
       }
     }
 
@@ -1076,13 +1090,13 @@
 
     // Tua video (Seek)
     function seekTo(second) {
-      if (video && second !== undefined && second !== null) {
-        video.currentTime = Math.max(0, second - 0.1);
+      if (video && second !== undefined && second !== null && !isNaN(second)) {
+        video.currentTime = Math.max(0, parseFloat(second) - 0.1);
         video.play();
       }
     }
 
-    // HIỂN THỊ DỮ LIỆU THẬT TỪ API ON VISUAL DASHBOARD
+    // HIỂN THỊ DỮ LIỆU THẬT TỪ API ON VISUAL DASHBOARD (AN TOÀN NGUYÊN BẢN)
     function renderEvidence(data) {
       currentEvidence = data;
       const duration = data.duration_seconds || (video.duration ? video.duration : 0);
@@ -1120,15 +1134,17 @@
       // Turn Blocks
       const turns = data.turn_evidence || [];
       turns.forEach(turn => {
-        if (duration > 0) {
-          const leftPercent = (turn.start_sec / duration) * 100;
-          const widthPercent = (turn.duration_sec / duration) * 100;
+        if (duration > 0 && turn.start_sec !== undefined) {
+          const startSec = parseFloat(turn.start_sec || 0);
+          const durSec = parseFloat(turn.duration_sec || 0);
+          const leftPercent = (startSec / duration) * 100;
+          const widthPercent = (durSec / duration) * 100;
           const block = document.createElement('div');
           block.className = 'timeline-block turn';
           block.style.left = `${leftPercent}%`;
           block.style.width = `${Math.max(widthPercent, 0.5)}%`;
           block.title = `Lượt ${turn.turn_index}: ${turn.text || ''}`;
-          block.onclick = (e) => { e.stopPropagation(); seekTo(turn.start_sec); };
+          block.onclick = (e) => { e.stopPropagation(); seekTo(startSec); };
           timelineTrack.appendChild(block);
         }
       });
@@ -1136,15 +1152,17 @@
       // Distractions Blocks
       const distractions = (data.anomalies && data.anomalies.distraction_moments) || [];
       distractions.forEach(item => {
-        if (duration > 0) {
-          const leftPercent = (item.start_sec / duration) * 100;
-          const widthPercent = ((item.end_sec - item.start_sec) / duration) * 100;
+        if (duration > 0 && item.start_sec !== undefined) {
+          const startSec = parseFloat(item.start_sec || 0);
+          const endSec = parseFloat(item.end_sec || startSec);
+          const leftPercent = (startSec / duration) * 100;
+          const widthPercent = ((endSec - startSec) / duration) * 100;
           const block = document.createElement('div');
           block.className = 'timeline-block distraction';
           block.style.left = `${leftPercent}%`;
           block.style.width = `${Math.max(widthPercent, 1.0)}%`;
-          block.title = `Xao nhãng: ${item.start_sec.toFixed(1)}s - ${item.end_sec.toFixed(1)}s (${item.reason || ''})`;
-          block.onclick = (e) => { e.stopPropagation(); seekTo(item.start_sec); };
+          block.title = `Xao nhãng: ${safeFix(startSec)}s - ${safeFix(endSec)}s (${item.reason || ''})`;
+          block.onclick = (e) => { e.stopPropagation(); seekTo(startSec); };
           timelineTrack.appendChild(block);
         }
       });
@@ -1152,15 +1170,17 @@
       // Hesitations Blocks
       const hesitations = (data.anomalies && data.anomalies.hesitation_moments) || [];
       hesitations.forEach(item => {
-        if (duration > 0) {
-          const leftPercent = (item.start_sec / duration) * 100;
-          const widthPercent = ((item.end_sec - item.start_sec) / duration) * 100;
+        if (duration > 0 && item.start_sec !== undefined) {
+          const startSec = parseFloat(item.start_sec || 0);
+          const endSec = parseFloat(item.end_sec || startSec);
+          const leftPercent = (startSec / duration) * 100;
+          const widthPercent = ((endSec - startSec) / duration) * 100;
           const block = document.createElement('div');
           block.className = 'timeline-block hesitation';
           block.style.left = `${leftPercent}%`;
           block.style.width = `${Math.max(widthPercent, 1.0)}%`;
-          block.title = `Ngập ngừng: ${item.start_sec.toFixed(1)}s - ${item.end_sec.toFixed(1)}s`;
-          block.onclick = (e) => { e.stopPropagation(); seekTo(item.start_sec); };
+          block.title = `Ngập ngừng: ${safeFix(startSec)}s - ${safeFix(endSec)}s`;
+          block.onclick = (e) => { e.stopPropagation(); seekTo(startSec); };
           timelineTrack.appendChild(block);
         }
       });
@@ -1168,11 +1188,38 @@
       // 3. Render Danh sách Điểm Bất Thường (Anomalies Cards)
       const anomaliesList = document.getElementById('anomaliesList');
       anomaliesList.innerHTML = '';
-      const allAnomalies = [
-        ...distractions.map(d => ({ ...d, type: 'distraction', label: 'Xao nhãng' })),
-        ...hesitations.map(h => ({ ...h, type: 'hesitation', label: 'Ngập ngừng' })),
-        ...((data.anomalies && data.anomalies.nodding_moments) || []).map(n => ({ ...n, type: 'nodding', label: 'Gật đầu', reason: 'Tương tác đồng thuận' }))
-      ].sort((a, b) => a.start_sec - b.start_sec);
+
+      const normalizedDistractions = distractions.map(d => ({
+        start_sec: parseFloat(d.start_sec || 0),
+        end_sec: parseFloat(d.end_sec || d.start_sec || 0),
+        reason: d.reason || '',
+        type: 'distraction',
+        label: 'Xao nhãng'
+      }));
+
+      const normalizedHesitations = hesitations.map(h => ({
+        start_sec: parseFloat(h.start_sec || 0),
+        end_sec: parseFloat(h.end_sec || h.start_sec || 0),
+        reason: h.reason || 'Khoảng lặng ngập ngừng kéo dài',
+        type: 'hesitation',
+        label: 'Ngập ngừng'
+      }));
+
+      const normalizedNoddings = ((data.anomalies && data.anomalies.nodding_moments) || []).map(n => {
+        const s = parseFloat(n.start_sec || n.timestamp || 0);
+        const dur = parseFloat(n.duration || 1.0);
+        const e = parseFloat(n.end_sec || (s + dur));
+        return {
+          start_sec: s,
+          end_sec: e,
+          reason: 'Tương tác gật đầu đồng thuận',
+          type: 'nodding',
+          label: 'Gật đầu'
+        };
+      });
+
+      const allAnomalies = [...normalizedDistractions, ...normalizedHesitations, ...normalizedNoddings]
+        .sort((a, b) => a.start_sec - b.start_sec);
 
       document.getElementById('anomalyCountBadge').textContent = `${allAnomalies.length} sự kiện`;
 
@@ -1188,13 +1235,15 @@
           if (item.type === 'hesitation') badgeClass = 'badge-hesitation';
           if (item.type === 'nodding') badgeClass = 'badge-nodding';
 
-          const durSec = (item.end_sec - item.start_sec).toFixed(1);
+          const startStr = safeFix(item.start_sec);
+          const endStr = safeFix(item.end_sec);
+          const durSecStr = safeFix(item.end_sec - item.start_sec);
 
           card.innerHTML = `
             <div class="anomaly-left">
               <span class="badge-type ${badgeClass}">${item.label}</span>
               <div>
-                <div class="anomaly-time">${item.start_sec.toFixed(1)}s → ${item.end_sec.toFixed(1)}s (${durSec}s)</div>
+                <div class="anomaly-time">${startStr}s → ${endStr}s (${durSecStr}s)</div>
                 <div class="anomaly-desc">${item.reason || ''}</div>
               </div>
             </div>
@@ -1224,12 +1273,15 @@
           const toneStr = turn.vocal_tone || '--';
           
           const turnText = turn.text ? turn.text : '';
+          const startStr = safeFix(turn.start_sec);
+          const endStr = safeFix(turn.end_sec);
+          const durStr = safeFix(turn.duration_sec || (turn.end_sec - turn.start_sec));
 
           bubble.innerHTML = `
             <div class="turn-header">
               <div class="turn-role-time">
                 <span class="role-badge">LƯỢT ${turn.turn_index}</span>
-                <span class="turn-timestamp">${turn.start_sec.toFixed(1)}s - ${turn.end_sec.toFixed(1)}s (${turn.duration_sec.toFixed(1)}s)</span>
+                <span class="turn-timestamp">${startStr}s - ${endStr}s (${durStr}s)</span>
               </div>
               <span style="font-size: 0.75rem; color: var(--primary-light);">▶ Bấm để nghe</span>
             </div>
