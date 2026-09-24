@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Face-Motion Sensory AI - Trực Quan Hóa Hành Vi Video</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-dark: #0a0e17;
+      --bg-card: rgba(18, 24, 38, 0.85);
+      --bg-card-hover: rgba(28, 38, 58, 0.95);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(99, 102, 241, 0.4);
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 10% 15%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+        radial-gradient(at 90% 85%, rgba(6, 182, 212, 0.1) 0px, transparent 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* HEADER */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border-color);
+      backdrop-filter: blur(12px);
+      background: rgba(10, 14, 23, 0.8);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--primary), var(--accent-cyan));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), #4f46e5);
+      color: white;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
+    }
+    .btn-primary:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
+    }
+
+    /* MAIN CONTAINER */
+    .dashboard-container {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 24px;
+      padding: 24px 28px;
+      flex: 1;
+      max-width: 1800px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 1100px) {
+      .dashboard-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* CARDS */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(16px);
+      margin-bottom: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* VIDEO SECTION */
+    .video-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    /* HUD OVERLAY */
+    .video-hud-overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .hud-badge {
+      background: rgba(10, 14, 23, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+    }
+    .status-dot.distracted {
+      background: var(--accent-rose);
+      box-shadow: 0 0 10px var(--accent-rose);
+    }
+
+    /* MULTI-TRACK TIMELINE */
+    .timeline-container {
+      margin-top: 16px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 12px;
+      padding: 14px;
+      border: 1px solid var(--border-color);
+    }
+
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .timeline-track-wrapper {
+      position: relative;
+      height: 38px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      cursor: pointer;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .timeline-block {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-radius: 4px;
+      opacity: 0.85;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .timeline-block:hover {
+      opacity: 1;
+      transform: scaleY(1.15);
+      z-index: 5;
+    }
+
+    .timeline-block.distraction {
+      background: linear-gradient(180deg, #f43f5e, #be123c);
+      box-shadow: 0 0 8px rgba(244, 63, 94, 0.6);
+    }
+
+    .timeline-block.hesitation {
+      background: linear-gradient(180deg, #f59e0b, #b45309);
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+    }
+
+    .timeline-block.turn {
+      background: rgba(99, 102, 241, 0.25);
+      border-left: 2px solid var(--primary-light);
+      border-right: 2px solid var(--primary-light);
+    }
+
+    .playhead-marker {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #ffffff;
+      box-shadow: 0 0 10px #ffffff;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .timeline-legend {
+      display: flex;
+      gap: 16px;
+      margin-top: 10px;
+      font-size: 0.75rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+    }
+    .legend-box {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+
+    /* ANOMALIES LIST (CLICK TO SEEK) */
+    .anomalies-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .anomaly-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .anomaly-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-highlight);
+      transform: translateX(4px);
+    }
+
+    .anomaly-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge-type {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-distraction { background: rgba(244, 63, 94, 0.2); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+    .badge-hesitation { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-nodding { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+    .anomaly-time {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #f1f5f9;
+    }
+
+    .anomaly-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .seek-btn-hint {
+      font-size: 0.75rem;
+      color: var(--primary-light);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* METRIC SCORECARDS */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .metric-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--accent-cyan);
+      margin-top: 4px;
+    }
+
+    /* TRANSCRIPT & TURNS */
+    .turns-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 480px;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+
+    .turn-bubble {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .turn-bubble:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-highlight);
+    }
+
+    .turn-bubble.active {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: var(--primary);
+      box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+    }
+
+    .turn-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .turn-role-time {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .role-badge {
+      background: var(--primary);
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .turn-timestamp {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .turn-text {
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: #f1f5f9;
+      margin-bottom: 10px;
+    }
+
+    .turn-metrics-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .mini-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .mini-chip strong {
+      color: #e2e8f0;
+    }
+
+    /* MODAL */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal-content {
+      background: #111827;
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      width: 90%;
+      max-width: 550px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+    }
+
+    .modal-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: #1f2937;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #fff;
+      padding: 10px;
+      font-size: 0.85rem;
+      margin-bottom: 14px;
+    }
+    textarea { height: 160px; font-family: monospace; resize: vertical; }
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <div class="brand-title">Couchee Face-Motion Sensory Dashboard</div>
+        <div class="brand-subtitle">Trực quan hóa hành vi, lượt thoại & điểm bất thường (API v2)</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <input type="file" id="localVideoPicker" accept="video/*" style="display: none;">
+      <button class="btn btn-secondary" onclick="document.getElementById('localVideoPicker').click()">
+        📁 Chọn Video Local
+      </button>
+      <button class="btn btn-secondary" onclick="openJsonModal()">
+        📋 Nhập JSON API
+      </button>
+      <button class="btn btn-primary" onclick="loadSampleDemo()">
+        ✨ Xem Dữ Liệu Demo
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN DASHBOARD -->
+  <div class="dashboard-container">
+    
+    <!-- LEFT COLUMN: VIDEO + TIMELINE + ANOMALIES -->
+    <div class="left-col">
+      
+      <!-- VIDEO PLAYER -->
+      <div class="card" style="padding: 16px;">
+        <div class="video-wrapper">
+          <div class="video-hud-overlay">
+            <div class="hud-badge" id="hudStatus">
+              <div class="status-dot" id="statusDot"></div>
+              <span id="hudEyeStatus">Mắt: Đang tập trung</span>
+            </div>
+            <div class="hud-badge">
+              <span id="hudEmotion">Cảm xúc: Tươi vui 😊</span>
+            </div>
+          </div>
+          <video id="mainVideo" controls playsinline>
+            <source id="videoSource" src="" type="video/mp4">
+            Trình duyệt của bạn không hỗ trợ thẻ video HTML5.
+          </video>
+        </div>
+
+        <!-- MULTI-TRACK TIMELINE -->
+        <div class="timeline-container">
+          <div class="timeline-header">
+            <span>DÒNG THỜI GIAN (CLICK VÀO ĐỂ TUA ĐẾN)</span>
+            <span id="timeDisplay">00:00 / 00:00</span>
+          </div>
+
+          <div class="timeline-track-wrapper" id="timelineTrack" title="Nhấp để tua đến giây này">
+            <div class="playhead-marker" id="playhead"></div>
+            <!-- Dynamic blocks injected via JS -->
+          </div>
+
+          <div class="timeline-legend">
+            <div class="legend-item">
+              <div class="legend-box" style="background: #f43f5e;"></div>
+              <span>Xao nhãng (Distraction)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-box" style="background: #f59e0b;"></div>
+              <span>Ngập ngừng (Hesitation)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-box" style="background: #6366f1;"></div>
+              <span>Lượt nói (Turn)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANOMALIES LIST (CLICK TO SEEK) -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            ⚠️ Điểm Bất Thường Cần Chú Ý (Click để tua video)
+          </div>
+          <span style="font-size: 0.75rem; color: var(--text-muted);" id="anomalyCountBadge">0 sự kiện</span>
+        </div>
+        <div class="anomalies-list" id="anomaliesList">
+          <div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 0.85rem;">
+            Chưa có dữ liệu. Vui lòng bấm "Xem Dữ Liệu Demo" hoặc nạp video/JSON.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: METRICS + TRANSCRIPT -->
+    <div class="right-col">
+      
+      <!-- OVERALL METRICS -->
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <div class="metric-label">Giao Tiếp Mắt</div>
+          <div class="metric-value" id="valEyeContact">--%</div>
+          <div class="metric-sub" id="subDistracted">Xao nhãng: --%</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Tỷ Lệ Cười</div>
+          <div class="metric-value" id="valSmile">--%</div>
+          <div class="metric-sub" id="subNodding">Gật đầu: -- lần</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Tốc Độ Nói</div>
+          <div class="metric-value" id="valSpeechRate">--</div>
+          <div class="metric-sub">Từ / phút (WPM)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Tông Giọng</div>
+          <div class="metric-value" style="font-size: 1.15rem; text-transform: capitalize;" id="valVocalTone">--</div>
+          <div class="metric-sub" id="subEmotion">Cảm xúc: --</div>
+        </div>
+      </div>
+
+      <!-- TURNS TRANSCRIPT -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            💬 Lượt Nói Tự Động Trích Xuất (Auto Turns ASR)
+          </div>
+          <span style="font-size: 0.75rem; color: var(--text-muted);" id="turnsCountBadge">0 lượt</span>
+        </div>
+        <div class="turns-container" id="turnsList">
+          <div style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.85rem;">
+            Danh sách lời thoại bóc tách tự động sẽ xuất hiện ở đây.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- JSON INPUT MODAL -->
+  <div class="modal-backdrop" id="jsonModal">
+    <div class="modal-content">
+      <div class="modal-title">Dán Dữ Liệu JSON từ API</div>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+        Dán toàn bộ nội dung JSON trả về từ endpoint <code>/api/v2/analyze-auto</code> hoặc <code>/api/v2/analyze-video</code>:
+      </p>
+      <textarea id="jsonInputArea" placeholder='{"session_id": "...", "turn_evidence": [...]}'></textarea>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn btn-secondary" onclick="closeJsonModal()">Đóng</button>
+        <button class="btn btn-primary" onclick="applyJsonInput()">Áp Dụng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // Dữ liệu mẫu demo thực tế để người dùng trải nghiệm ngay
+    const SAMPLE_DEMO_DATA = {
+      "session_id": "demo_roleplay_session_01",
+      "status": "completed",
+      "media_type": "video",
+      "duration_seconds": 38.6,
+      "performance": { "execution_time_sec": 4.8, "realtime_multiplier": "8.04x" },
+      "overall_metrics": {
+        "eye_contact_ratio": 0.84,
+        "distracted_ratio": 0.16,
+        "nodding_count": 6,
+        "smile_ratio": 0.42,
+        "dominant_emotions": { "happy": 0.45, "neutral": 0.55 },
+        "speech_rate_wpm": 165.2,
+        "vocal_tone": "confident"
+      },
+      "anomalies": {
+        "distraction_moments": [
+          { "start_sec": 7.2, "end_sec": 9.8, "duration": 2.6, "reason": "Nhìn chệch góc cam > 35 độ" },
+          { "start_sec": 24.5, "end_sec": 27.8, "duration": 3.3, "reason": "Cúi đầu nhìn xuống bàn" }
+        ],
+        "hesitation_moments": [
+          { "start_sec": 14.1, "end_sec": 16.3, "duration": 2.2, "reason": "Khoảng lặng ngập ngừng kéo dài" }
+        ],
+        "nodding_moments": [
+          { "start_sec": 4.5, "end_sec": 5.8, "duration": 1.3 },
+          { "start_sec": 19.2, "end_sec": 20.6, "duration": 1.4 }
+        ]
+      },
+      "turn_evidence": [
+        {
+          "turn_index": 1,
+          "role": "speaker",
+          "start_sec": 0.8,
+          "end_sec": 6.5,
+          "duration_sec": 5.7,
+          "text": "Chào mừng anh chị đã ghé thăm gian hàng của chúng em hôm nay ạ!",
+          "eye_contact_ratio": 0.92,
+          "smile_ratio": 0.65,
+          "dominant_emotion": "happy",
+          "nodding_count": 1,
+          "speech_rate_wpm": 158.0,
+          "vocal_tone": "warm"
+        },
+        {
+          "turn_index": 2,
+          "role": "speaker",
+          "start_sec": 7.0,
+          "end_sec": 13.8,
+          "duration_sec": 6.8,
+          "text": "Dạ hiện tại bên em đang có chương trình trải nghiệm giải pháp bán hàng thông minh mới nhất.",
+          "eye_contact_ratio": 0.75,
+          "smile_ratio": 0.35,
+          "dominant_emotion": "neutral",
+          "nodding_count": 0,
+          "speech_rate_wpm": 172.5,
+          "vocal_tone": "confident"
+        },
+        {
+          "turn_index": 3,
+          "role": "speaker",
+          "start_sec": 14.2,
+          "end_sec": 23.5,
+          "duration_sec": 9.3,
+          "text": "Dạ... để em mở ứng dụng demo cho anh xem thử các tính năng nhận diện hành vi nhé.",
+          "eye_contact_ratio": 0.88,
+          "smile_ratio": 0.40,
+          "dominant_emotion": "happy",
+          "nodding_count": 1,
+          "speech_rate_wpm": 145.0,
+          "vocal_tone": "hesitant"
+        },
+        {
+          "turn_index": 4,
+          "role": "speaker",
+          "start_sec": 24.2,
+          "end_sec": 36.5,
+          "duration_sec": 12.3,
+          "text": "Hệ thống có thể đo đạc độ tập trung, tần suất gật đầu và tông giọng để chấm điểm trực tiếp cho nhân viên tư vấn.",
+          "eye_contact_ratio": 0.81,
+          "smile_ratio": 0.38,
+          "dominant_emotion": "neutral",
+          "nodding_count": 2,
+          "speech_rate_wpm": 168.0,
+          "vocal_tone": "confident"
+        }
+      ]
+    };
+
+    let currentEvidence = null;
+    const video = document.getElementById('mainVideo');
+    const timelineTrack = document.getElementById('timelineTrack');
+    const playhead = document.getElementById('playhead');
+    const timeDisplay = document.getElementById('timeDisplay');
+
+    // Format giây thành mm:ss
+    function formatTime(sec) {
+      if (isNaN(sec)) return "00:00";
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // TUA VIDEO ĐẾN THỜI ĐIỂM (CLICK TO SEEK)
+    function seekTo(second) {
+      if (video) {
+        video.currentTime = Math.max(0, second - 0.2); // Tua sớm hơn 0.2s để xem trọn vẹn ngữ cảnh
+        video.play();
+      }
+    }
+
+    // RENDER TOÀN BỘ GIAO DIỆN
+    function renderEvidence(data) {
+      currentEvidence = data;
+      const duration = data.duration_seconds || (video.duration ? video.duration : 40);
+
+      // 1. Cập nhật thẻ điểm (Metrics)
+      const m = data.overall_metrics || {};
+      document.getElementById('valEyeContact').textContent = `${Math.round((m.eye_contact_ratio || 0) * 100)}%`;
+      document.getElementById('subDistracted').textContent = `Xao nhãng: ${Math.round((m.distracted_ratio || 0) * 100)}%`;
+      document.getElementById('valSmile').textContent = `${Math.round((m.smile_ratio || 0) * 100)}%`;
+      document.getElementById('subNodding').textContent = `Gật đầu: ${m.nodding_count || 0} lần`;
+      document.getElementById('valSpeechRate').textContent = Math.round(m.speech_rate_wpm || 0);
+      document.getElementById('valVocalTone').textContent = m.vocal_tone || "Bình thường";
+
+      // 2. Render Timeline Blocks
+      timelineTrack.innerHTML = '<div class="playhead-marker" id="playhead"></div>';
+
+      // Turns blocks
+      (data.turn_evidence || []).forEach(turn => {
+        const leftPercent = (turn.start_sec / duration) * 100;
+        const widthPercent = (turn.duration_sec / duration) * 100;
+        const block = document.createElement('div');
+        block.className = 'timeline-block turn';
+        block.style.left = `${leftPercent}%`;
+        block.style.width = `${widthPercent}%`;
+        block.title = `Turn ${turn.turn_index}: ${turn.text || ''}`;
+        block.onclick = (e) => { e.stopPropagation(); seekTo(turn.start_sec); };
+        timelineTrack.appendChild(block);
+      });
+
+      // Distractions blocks
+      const distractions = (data.anomalies && data.anomalies.distraction_moments) || [];
+      distractions.forEach(item => {
+        const leftPercent = (item.start_sec / duration) * 100;
+        const widthPercent = ((item.end_sec - item.start_sec) / duration) * 100;
+        const block = document.createElement('div');
+        block.className = 'timeline-block distraction';
+        block.style.left = `${leftPercent}%`;
+        block.style.width = `${Math.max(widthPercent, 1.2)}%`;
+        block.title = `Xao nhãng: ${item.start_sec}s - ${item.end_sec}s (${item.reason || ''})`;
+        block.onclick = (e) => { e.stopPropagation(); seekTo(item.start_sec); };
+        timelineTrack.appendChild(block);
+      });
+
+      // Hesitations blocks
+      const hesitations = (data.anomalies && data.anomalies.hesitation_moments) || [];
+      hesitations.forEach(item => {
+        const leftPercent = (item.start_sec / duration) * 100;
+        const widthPercent = ((item.end_sec - item.start_sec) / duration) * 100;
+        const block = document.createElement('div');
+        block.className = 'timeline-block hesitation';
+        block.style.left = `${leftPercent}%`;
+        block.style.width = `${Math.max(widthPercent, 1.2)}%`;
+        block.title = `Ngập ngừng: ${item.start_sec}s - ${item.end_sec}s`;
+        block.onclick = (e) => { e.stopPropagation(); seekTo(item.start_sec); };
+        timelineTrack.appendChild(block);
+      });
+
+      // 3. Render Anomalies List (Click to Seek Cards)
+      const anomaliesList = document.getElementById('anomaliesList');
+      anomaliesList.innerHTML = '';
+      const allAnomalies = [
+        ...distractions.map(d => ({ ...d, type: 'distraction', label: 'Xao nhãng' })),
+        ...hesitations.map(h => ({ ...h, type: 'hesitation', label: 'Ngập ngừng' })),
+        ...((data.anomalies && data.anomalies.nodding_moments) || []).map(n => ({ ...n, type: 'nodding', label: 'Gật đầu', reason: 'Tương tác đồng thuận' }))
+      ].sort((a, b) => a.start_sec - b.start_sec);
+
+      document.getElementById('anomalyCountBadge').textContent = `${allAnomalies.length} sự kiện`;
+
+      if (allAnomalies.length === 0) {
+        anomaliesList.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Không phát hiện điểm bất thường đáng kể.</div>';
+      } else {
+        allAnomalies.forEach(item => {
+          const card = document.createElement('div');
+          card.className = 'anomaly-card';
+          card.onclick = () => seekTo(item.start_sec);
+
+          let badgeClass = 'badge-distraction';
+          if (item.type === 'hesitation') badgeClass = 'badge-hesitation';
+          if (item.type === 'nodding') badgeClass = 'badge-nodding';
+
+          card.innerHTML = `
+            <div class="anomaly-left">
+              <span class="badge-type ${badgeClass}">${item.label}</span>
+              <div>
+                <div class="anomaly-time">${item.start_sec.toFixed(1)}s → ${item.end_sec.toFixed(1)}s (${(item.end_sec - item.start_sec).toFixed(1)}s)</div>
+                <div class="anomaly-desc">${item.reason || ''}</div>
+              </div>
+            </div>
+            <div class="seek-btn-hint">▶ Tua đến</div>
+          `;
+          anomaliesList.appendChild(card);
+        });
+      }
+
+      // 4. Render Turns List (ASR Transcript)
+      const turnsList = document.getElementById('turnsList');
+      turnsList.innerHTML = '';
+      const turns = data.turn_evidence || [];
+      document.getElementById('turnsCountBadge').textContent = `${turns.length} lượt`;
+
+      turns.forEach(turn => {
+        const bubble = document.createElement('div');
+        bubble.className = 'turn-bubble';
+        bubble.id = `turn-${turn.turn_index}`;
+        bubble.onclick = () => seekTo(turn.start_sec);
+
+        bubble.innerHTML = `
+          <div class="turn-header">
+            <div class="turn-role-time">
+              <span class="role-badge">LƯỢT ${turn.turn_index}</span>
+              <span class="turn-timestamp">${turn.start_sec.toFixed(1)}s - ${turn.end_sec.toFixed(1)}s (${turn.duration_sec.toFixed(1)}s)</span>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--primary-light);">▶ Bấm để nghe</span>
+          </div>
+          <div class="turn-text">"${turn.text || '...'}"</div>
+          <div class="turn-metrics-row">
+            <span class="mini-chip">Mắt: <strong>${Math.round((turn.eye_contact_ratio || 0) * 100)}%</strong></span>
+            <span class="mini-chip">Cười: <strong>${Math.round((turn.smile_ratio || 0) * 100)}%</strong></span>
+            <span class="mini-chip">WPM: <strong>${Math.round(turn.speech_rate_wpm || 0)}</strong></span>
+            <span class="mini-chip">Giọng: <strong>${turn.vocal_tone || 'confident'}</strong></span>
+          </div>
+        `;
+        turnsList.appendChild(bubble);
+      });
+    }
+
+    // ĐỒNG BỘ PLAYHEAD & HUD VỚI VIDEO TIME
+    video.ontimeupdate = () => {
+      const cur = video.currentTime;
+      const dur = video.duration || (currentEvidence ? currentEvidence.duration_seconds : 1);
+      
+      // Update text time
+      timeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+
+      // Update playhead bar
+      const percent = (cur / dur) * 100;
+      const playheadEl = document.getElementById('playhead');
+      if (playheadEl) playheadEl.style.left = `${percent}%`;
+
+      if (!currentEvidence) return;
+
+      // 1. Kiểm tra xem giây hiện tại có đang bị Xao Nhãng không
+      const isDistracted = (currentEvidence.anomalies.distraction_moments || []).some(
+        d => cur >= d.start_sec && cur <= d.end_sec
+      );
+      const dot = document.getElementById('statusDot');
+      const eyeText = document.getElementById('hudEyeStatus');
+      if (isDistracted) {
+        dot.className = 'status-dot distracted';
+        eyeText.textContent = 'Mắt: ⚠️ Đang Xao Nhãng';
+        eyeText.style.color = '#fb7185';
+      } else {
+        dot.className = 'status-dot';
+        eyeText.textContent = 'Mắt: Đang Tập Trung';
+        eyeText.style.color = '#f8fafc';
+      }
+
+      // 2. Highlight turn bubble đang nói
+      (currentEvidence.turn_evidence || []).forEach(turn => {
+        const bubble = document.getElementById(`turn-${turn.turn_index}`);
+        if (bubble) {
+          if (cur >= turn.start_sec && cur <= turn.end_sec) {
+            bubble.classList.add('active');
+            bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          } else {
+            bubble.classList.remove('active');
+          }
+        }
+      });
+    };
+
+    // CLICK TRỰC TIẾP TRÊN TIMELINE ĐỂ TUA
+    timelineTrack.addEventListener('click', (e) => {
+      const rect = timelineTrack.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const fraction = Math.max(0, Math.min(1, clickX / rect.width));
+      const dur = video.duration || (currentEvidence ? currentEvidence.duration_seconds : 40);
+      seekTo(fraction * dur);
+    });
+
+    // CHỌN FILE VIDEO TỪ MÁY LOCAL
+    document.getElementById('localVideoPicker').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        video.load();
+        video.play();
+      }
+    });
+
+    // MODAL DÁN JSON
+    function openJsonModal() {
+      document.getElementById('jsonModal').style.display = 'flex';
+    }
+    function closeJsonModal() {
+      document.getElementById('jsonModal').style.display = 'none';
+    }
+    function applyJsonInput() {
+      const raw = document.getElementById('jsonInputArea').value.trim();
+      try {
+        const parsed = JSON.parse(raw);
+        renderEvidence(parsed);
+        closeJsonModal();
+      } catch (err) {
+        alert("JSON không hợp lệ: " + err.message);
+      }
+    }
+
+    // TẢI DỮ LIỆU DEMO MẪU
+    function loadSampleDemo() {
+      renderEvidence(SAMPLE_DEMO_DATA);
+    }
+
+    // Khởi tạo chạy mẫu khi vừa mở trang
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSampleDemo();
+    });
+  </script>
+</body>
+</html>
