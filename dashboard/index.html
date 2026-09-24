@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Couchee Face-Motion Sensory Dashboard (Raw JSON & Visual)</title>
+  <title>Couchee Face-Motion Sensory Dashboard (Live API)</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -149,7 +149,7 @@
       color: #fff;
       font-size: 0.82rem;
       outline: none;
-      width: 170px;
+      width: 180px;
     }
 
     .btn {
@@ -185,12 +185,26 @@
       transform: translateY(-1px);
     }
 
+    /* ERROR BANNER */
+    .error-banner {
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      color: #fca5a5;
+      padding: 12px 20px;
+      margin: 16px 28px 0 28px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+    }
+
     /* MAIN CONTAINER */
     .dashboard-container {
       display: grid;
       grid-template-columns: 1.15fr 0.85fr;
       gap: 24px;
-      padding: 24px 28px;
+      padding: 20px 28px;
       flex: 1;
       max-width: 1800px;
       margin: 0 auto;
@@ -199,7 +213,7 @@
 
     .raw-json-container {
       display: none;
-      padding: 24px 28px;
+      padding: 20px 28px;
       flex: 1;
       max-width: 1800px;
       margin: 0 auto;
@@ -707,6 +721,12 @@
     </div>
   </header>
 
+  <!-- ERROR BANNER -->
+  <div class="error-banner" id="errorBanner">
+    <span id="errorMsgText">Lỗi kết nối API</span>
+    <button onclick="document.getElementById('errorBanner').style.display='none'" style="background:transparent; border:none; color:#fca5a5; cursor:pointer; font-weight:bold;">✕</button>
+  </div>
+
   <!-- 1. DASHBOARD CONTAINER TRỰC QUAN -->
   <div class="dashboard-container" id="visualDashboardView">
     
@@ -844,7 +864,7 @@
       </div>
       
       <div class="json-code-box" id="rawJsonDisplay">
-        <span style="color: var(--text-muted);">// Chưa có dữ liệu API. Hãy chọn video và bấm "Phân Tích Video" để nhận JSON thô tại đây...</span>
+        <span style="color: var(--text-muted);">// Chưa có dữ liệu API thành công. Chọn video và bấm "Phân Tích Video" để nhận response JSON...</span>
       </div>
     </div>
   </div>
@@ -866,6 +886,16 @@
     const timelineTrack = document.getElementById('timelineTrack');
     const playhead = document.getElementById('playhead');
     const timeDisplay = document.getElementById('timeDisplay');
+    const errorBanner = document.getElementById('errorBanner');
+    const errorMsgText = document.getElementById('errorMsgText');
+
+    function showError(msg) {
+      errorMsgText.textContent = msg;
+      errorBanner.style.display = 'flex';
+    }
+    function hideError() {
+      errorBanner.style.display = 'none';
+    }
 
     // Chuyển đổi giữa chế độ Trực Quan và JSON Thô
     function switchViewMode(mode) {
@@ -901,11 +931,14 @@
         videoPlaceholder.style.display = 'none';
         hudOverlay.style.display = 'flex';
         video.load();
+        hideError();
       }
     });
 
     // HÀM GỌI API THẬT POST /api/v2/analyze-video
     async function executeRealApiCall() {
+      hideError();
+
       if (!selectedFile) {
         alert("Vui lòng chọn file video (.mp4, .webm) trước khi bấm phân tích!");
         return;
@@ -947,7 +980,10 @@
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`Server trả về mã lỗi HTTP ${response.status}: ${errText}`);
+          const errObj = { error: `HTTP ${response.status}`, details: errText, target_url: apiUrl };
+          renderRawJson(errObj);
+          showError(`Server trả về mã lỗi HTTP ${response.status}: ${errText}`);
+          return;
         }
 
         // Nhận dữ liệu THẬT 100% từ Server
@@ -963,8 +999,20 @@
       } catch (err) {
         clearInterval(interval);
         overlay.style.display = 'none';
-        console.error("Lỗi API:", err);
-        alert(`Gọi API thất bại:\n${err.message}\n\nHãy kiểm tra lại server FastAPI tại '${baseUrl}' đã bật chưa.`);
+        console.error("Lỗi kết nối API:", err);
+
+        const errorInfo = {
+          status: "failed",
+          error_message: err.message || "Failed to fetch",
+          target_url: apiUrl,
+          troubleshooting: [
+            `1. Địa chỉ Server API '${baseUrl}' có thể không chính xác. Nếu server chạy trên Linux remote (k8sbiai2), hãy điền 'http://<IP_LINUX_SERVER>:8000'.`,
+            `2. Server FastAPI ('python server.py') có thể chưa được bật hoặc chưa mở port 8000.`,
+            `3. Khuyên dùng đường dẫn trực tiếp: mở 'http://<IP_LINUX_SERVER>:8000/dashboard' trên trình duyệt.`
+          ]
+        };
+        renderRawJson(errorInfo);
+        showError(`Không kết nối được tới Server API tại: ${apiUrl}. Vui lòng kiểm tra lại IP Server!`);
       }
     }
 
