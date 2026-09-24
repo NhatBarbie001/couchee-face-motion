@@ -24,6 +24,17 @@ class AnalyzeRequestV2(BaseModel):
     include_timeline_1s: bool = Field(True, description="Có trả về timeline 1 giây không")
 
 
+class AnalyzeAutoRequest(BaseModel):
+    video_path: str = Field(..., description="Đường dẫn tuyệt đối hoặc tương đối tới file video/audio trên server")
+    session_id: Optional[str] = Field(None, description="Mã phiên thực hành (ví dụ: session_123)")
+    vad_threshold: float = Field(0.3, ge=0.05, le=0.95, description="Ngưỡng nhạy kích hoạt VAD (mặc định 0.3)")
+    pause_threshold_sec: float = Field(0.3, ge=0.1, le=5.0, description="Khoảng lặng dừng nói để ngắt thành một turn riêng biệt (giây, mặc định 0.3)")
+    step: int = Field(6, ge=1, le=30, description="Bước nhảy frame xử lý video (mặc định 6)")
+    batch_size: int = Field(32, ge=1, le=128, description="Batch size inference trên GPU (mặc định 32)")
+    include_timeline_1s: bool = Field(True, description="Có trả về timeline 1 giây không")
+
+
+
 class AnomalyMoment(BaseModel):
     start_sec: float
     end_sec: float

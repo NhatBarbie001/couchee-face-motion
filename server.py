@@ -23,7 +23,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from service import MultimodalEvaluatorService
-from schemas_v2 import AnalyzeRequestV2, BehavioralEvidenceResponse
+from schemas_v2 import AnalyzeRequestV2, BehavioralEvidenceResponse, AnalyzeAutoRequest
 
 # Global service handle
 evaluator_service: Optional[MultimodalEvaluatorService] = None
@@ -273,6 +273,127 @@ async def analyze_behavioral_evidence(payload: AnalyzeRequestV2):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Behavioral evidence extraction failed: {str(e)}"
         )
+
+
+@app.post("/api/v2/analyze-auto", tags=["Inference v2 (Auto Turns)"], response_model=BehavioralEvidenceResponse)
+async def analyze_auto_json(payload: AnalyzeAutoRequest):
+    """
+    Sensory Engine v2 (Auto Turns - JSON Body):
+    Directly assesses video without requiring pre-annotated turn markers.
+    Uses Zipformer ASR for Vietnamese transcription and Silero VAD (default threshold=0.3).
+    Splits into a separate speaker turn whenever speech pauses for >= pause_threshold_sec (default: 0.3s).
+    All turns are pure speaker turns (role: 'speaker', no artificial student/ai split).
+    Returns complete behavioral evidence JSON matching /api/v2/analyze.
+    """
+    if evaluator_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model service is still initializing or unavailable."
+        )
+
+    if not os.path.exists(payload.video_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Media file not found: {payload.video_path}"
+        )
+
+    try:
+        evidence = evaluator_service.extract_behavioral_evidence(
+            video_path=payload.video_path,
+            turn_markers=None,
+            media_type="video",
+            step=payload.step,
+            batch_size=payload.batch_size,
+            session_id=payload.session_id,
+            include_timeline_1s=payload.include_timeline_1s,
+            vad_threshold=payload.vad_threshold,
+            pause_threshold_sec=payload.pause_threshold_sec
+        )
+        return JSONResponse(content=evidence)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Auto behavioral evidence extraction failed: {str(e)}"
+        )
+
+
+@app.post("/api/v2/analyze-video", tags=["Inference v2 (Auto Turns)"], response_model=BehavioralEvidenceResponse)
+async def analyze_video_auto_upload(
+    file: Optional[UploadFile] = File(None, description="Video file uploaded as multipart/form-data"),
+    video_path: Optional[str] = Form(None, description="Path to video file already on disk"),
+    session_id: Optional[str] = Form(None),
+    vad_threshold: float = Form(0.3, description="VAD sensitivity threshold (default: 0.3)"),
+    pause_threshold_sec: float = Form(0.3, description="Silence pause (seconds) to cut a new turn (default: 0.3s)"),
+    step: int = Form(6, description="Frame sampling step (default: 6)"),
+    batch_size: int = Form(32, description="GPU batch size (default: 32)"),
+    include_timeline_1s: bool = Form(True, description="Include 1s resolution timeline")
+):
+    """
+    Sensory Engine v2 (Auto Turns - File Upload / Form Path):
+    Upload video file directly OR specify an existing video path on the server.
+    Uses Zipformer ASR + sensitive Silero VAD (0.3).
+    Splits into separate speaker turns whenever the user pauses for >= pause_threshold_sec (default: 0.3s).
+    All turns are pure speaker turns (role: 'speaker', no artificial student/ai split).
+    Returns complete behavioral evidence JSON matching /api/v2/analyze.
+    """
+    if evaluator_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model service is still initializing or unavailable."
+        )
+
+    temp_video_path = None
+
+    try:
+        if file is not None:
+            suffix = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                temp_video_path = tmp.name
+                shutil.copyfileobj(file.file, tmp)
+            target_video = temp_video_path
+            current_session_id = session_id or os.path.splitext(file.filename or "session")[0]
+        elif video_path:
+            target_video = video_path
+            current_session_id = session_id or os.path.splitext(os.path.basename(video_path))[0]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either 'file' (multipart upload) or 'video_path' (form param) must be provided."
+            )
+
+        if not os.path.exists(target_video):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Video path does not exist: {target_video}"
+            )
+
+        evidence = evaluator_service.extract_behavioral_evidence(
+            video_path=target_video,
+            turn_markers=None,
+            media_type="video",
+            step=step,
+            batch_size=batch_size,
+            session_id=current_session_id,
+            include_timeline_1s=include_timeline_1s,
+            vad_threshold=vad_threshold,
+            pause_threshold_sec=pause_threshold_sec
+        )
+
+        return JSONResponse(content=evidence)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Auto video behavioral assessment failed: {str(e)}"
+        )
+    finally:
+        if temp_video_path and os.path.exists(temp_video_path):
+            try:
+                os.remove(temp_video_path)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

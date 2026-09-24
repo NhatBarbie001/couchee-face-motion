@@ -26,7 +26,9 @@ class BatchVADAnalyzer:
 
     def analyze_waveform(
         self,
-        waveform_16k: np.ndarray
+        waveform_16k: np.ndarray,
+        threshold: Optional[float] = None,
+        min_silence_duration_ms: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Analyzes a 16kHz mono audio array.
@@ -54,37 +56,55 @@ class BatchVADAnalyzer:
             prob = self.model.predict_chunk(chunk)
             speech_probs.append(prob)
 
-        # Hysteresis thresholding to extract segments
+        # Dynamic threshold & silence duration
+        act_threshold = threshold if threshold is not None else self.model.threshold
+        exit_threshold = act_threshold * 0.7
+        min_silence_ms = min_silence_duration_ms if min_silence_duration_ms is not None else 300
+        min_silence_chunks = max(1, int(16000 * (min_silence_ms / 1000.0) / chunk_size))
+
+        # Hysteresis thresholding with silence duration tracking
         speech_segments = []
         is_speaking = False
         start_chunk = 0
+        silence_counter = 0
 
         for i, p in enumerate(speech_probs):
-            if p >= self.model.threshold and not is_speaking:
-                is_speaking = True
-                start_chunk = i
-            elif p < (self.model.threshold * 0.7) and is_speaking:
-                is_speaking = False
-                start_sec = round((start_chunk * chunk_size) / 16000.0, 2)
-                end_sec = round((i * chunk_size) / 16000.0, 2)
-                if (end_sec - start_sec) >= (self.min_speech_samples / 16000.0):
-                    speech_segments.append({
-                        "start": start_sec,
-                        "end": end_sec,
-                        "duration": round(end_sec - start_sec, 2),
-                        "speech": True
-                    })
+            if not is_speaking:
+                if p >= act_threshold:
+                    is_speaking = True
+                    start_chunk = i
+                    silence_counter = 0
+            else:
+                if p < exit_threshold:
+                    silence_counter += 1
+                    if silence_counter >= min_silence_chunks:
+                        is_speaking = False
+                        end_chunk = max(start_chunk + 1, i - silence_counter + 1)
+                        start_sec = round((start_chunk * chunk_size) / 16000.0, 2)
+                        end_sec = round((end_chunk * chunk_size) / 16000.0, 2)
+                        if (end_sec - start_sec) >= (self.min_speech_samples / 16000.0):
+                            speech_segments.append({
+                                "start": start_sec,
+                                "end": end_sec,
+                                "duration": round(end_sec - start_sec, 2),
+                                "speech": True
+                            })
+                        silence_counter = 0
+                else:
+                    silence_counter = 0
 
         # Close segment if still speaking at end
         if is_speaking:
+            end_chunk = max(start_chunk + 1, num_chunks - silence_counter)
             start_sec = round((start_chunk * chunk_size) / 16000.0, 2)
-            end_sec = round(duration_sec, 2)
-            speech_segments.append({
-                "start": start_sec,
-                "end": end_sec,
-                "duration": round(end_sec - start_sec, 2),
-                "speech": True
-            })
+            end_sec = round((end_chunk * chunk_size) / 16000.0, 2)
+            if (end_sec - start_sec) >= (self.min_speech_samples / 16000.0):
+                speech_segments.append({
+                    "start": start_sec,
+                    "end": end_sec,
+                    "duration": round(end_sec - start_sec, 2),
+                    "speech": True
+                })
 
         # Calculate speech duration & pauses
         total_speech_sec = sum(s["duration"] for s in speech_segments)

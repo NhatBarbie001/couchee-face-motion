@@ -108,12 +108,19 @@ class AudioModule:
             dummy_data = np.zeros(self.sample_rate * 5, dtype=np.float32)
             return dummy_data, 5.0
 
-    def process(self, media_path: str) -> AudioFeatures:
+    def process(
+        self,
+        media_path: str,
+        vad_threshold: Optional[float] = None,
+        pause_threshold_sec: float = 0.3
+    ) -> AudioFeatures:
         """
         Processes an audio or video file and returns standardized AudioFeatures.
         
         Args:
             media_path: Path to audio (.wav, .mp3) or video (.mp4) file
+            vad_threshold: Optional sensitivity threshold for VAD (e.g. 0.3)
+            pause_threshold_sec: Silence duration (seconds) to split utterances/turns (default: 0.3)
         """
         if not os.path.exists(media_path):
             raise FileNotFoundError(f"Media file not found: {media_path}")
@@ -122,7 +129,12 @@ class AudioModule:
         waveform, duration_sec = self.load_waveform_16k(wav_path)
 
         # 1. Silero VAD (Acoustic Voice Activity Detection)
-        vad_results = self.vad_analyzer.analyze_waveform(waveform)
+        min_silence_ms = max(100, int(pause_threshold_sec * 1000))
+        vad_results = self.vad_analyzer.analyze_waveform(
+            waveform,
+            threshold=vad_threshold,
+            min_silence_duration_ms=min_silence_ms
+        )
         speech_segments = vad_results.get("speech_segments") or []
 
         # 2. Zipformer ASR Speech-to-Text Transcription (Linguistic Ground Truth)
@@ -133,13 +145,13 @@ class AudioModule:
         word_timestamps = [w.to_dict() for w in asr_result.words]
 
         # 3. Multimodal Speech Segmentation Reconciliation (VAD + ASR Ground Truth)
-        # If audio has background music or soft voice, Silero VAD may miss speech that ASR clearly recognized
+        # Groups ASR words based on pause_threshold_sec (>= 0.3s silence cuts span)
         if word_timestamps:
             asr_spans = []
             c_start = word_timestamps[0]["start"]
             c_end = word_timestamps[0]["end"]
             for w in word_timestamps[1:]:
-                if w["start"] - c_end < 1.0:
+                if w["start"] - c_end < pause_threshold_sec:
                     c_end = max(c_end, w["end"])
                 else:
                     asr_spans.append({
@@ -164,7 +176,7 @@ class AudioModule:
                 merged = []
                 cur = combined[0]
                 for nxt in combined[1:]:
-                    if nxt["start"] <= cur["end"] + 0.5:
+                    if nxt["start"] <= cur["end"] + (pause_threshold_sec * 0.8):
                         cur["end"] = max(cur["end"], nxt["end"])
                         cur["duration"] = round(cur["end"] - cur["start"], 2)
                     else:

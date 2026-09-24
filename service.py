@@ -236,12 +236,15 @@ class MultimodalEvaluatorService:
         step: int = 6,
         batch_size: int = 32,
         session_id: Optional[str] = None,
-        include_timeline_1s: bool = True
+        include_timeline_1s: bool = True,
+        vad_threshold: Optional[float] = None,
+        pause_threshold_sec: float = 0.3
     ) -> Dict[str, Any]:
         """
         Sensory Engine v2: Extracts objective multimodal behavioral evidence
         without hardcoded scoring, for consumption by LLMs or downstream analytics.
         Supports both 'video' and 'audio' (audio-only mode when webcam is off).
+        If turn_markers is not provided, automatically segments speaker turns using ASR and sensitive VAD (0.3s pause).
         """
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Media file not found: {video_path}")
@@ -250,12 +253,19 @@ class MultimodalEvaluatorService:
         media_type = (media_type or "video").lower()
         t_start = time.perf_counter()
 
+        eff_vad_threshold = vad_threshold if vad_threshold is not None else (0.3 if not turn_markers else 0.5)
+        eff_pause_threshold = pause_threshold_sec if pause_threshold_sec is not None else 0.3
+
         # =========================================================================
         # CASE A: AUDIO-ONLY MODE (Camera disabled by student)
         # =========================================================================
         if media_type == "audio":
             # Process audio only, skip GPU vision entirely
-            audio_features = self.audio_module.process(video_path)
+            audio_features = self.audio_module.process(
+                video_path,
+                vad_threshold=eff_vad_threshold,
+                pause_threshold_sec=eff_pause_threshold
+            )
             duration_sec = round(audio_features.duration_seconds, 2)
 
             # Hesitations from speech segments
@@ -272,7 +282,7 @@ class MultimodalEvaluatorService:
                     })
 
             # Turn-by-turn evidence
-            if turn_markers:
+            if turn_markers and len(turn_markers) > 0:
                 turn_evidence = self.turn_analyzer.analyze_ground_truth_turns(
                     turn_markers=turn_markers,
                     frame_timeline=[],
@@ -280,31 +290,28 @@ class MultimodalEvaluatorService:
                     nodding_moments=[]
                 )
             else:
-                raw_turns = self.turn_analyzer.segment_conversational_turns(
+                raw_turns = self.turn_analyzer.segment_speaker_turns(
                     speech_segments=speech_segs,
                     frame_timeline=[],
                     total_duration_sec=duration_sec,
-                    word_timestamps=audio_features.word_timestamps or []
+                    word_timestamps=audio_features.word_timestamps or [],
+                    pause_threshold_sec=eff_pause_threshold
                 )
-                turn_evidence = [
+                auto_turn_markers = [
                     {
-                        "turn_index": t["turn_id"],
-                        "role": "student" if t["type"] == "speaking" else "ai",
+                        "role": "speaker",
                         "start_sec": t["start_time"],
                         "end_sec": t["end_time"],
-                        "duration_sec": t["duration"],
-                        "text": t.get("text", ""),
-                        "eye_contact_ratio": None,
-                        "smile_ratio": None,
-                        "dominant_emotion": None,
-                        "nodding_count": None,
-                        "attentive_gaze_ratio": None,
-                        "speech_rate_wpm": audio_features.speech_rate_wpm if t["type"] == "speaking" else 0.0,
-                        "hesitation_seconds": 0.0,
-                        "is_speaking": t["type"] == "speaking"
+                        "text": t.get("text", "")
                     }
                     for t in raw_turns
                 ]
+                turn_evidence = self.turn_analyzer.analyze_ground_truth_turns(
+                    turn_markers=auto_turn_markers,
+                    frame_timeline=[],
+                    audio_features=audio_features,
+                    nodding_moments=[]
+                )
 
             vocal_tone = self._classify_vocal_tone(
                 pitch_variance=audio_features.pitch_variance,
@@ -314,7 +321,7 @@ class MultimodalEvaluatorService:
             )
 
             for t in turn_evidence:
-                if t.get("role") == "student":
+                if t.get("role") in ["student", "speaker", "user"]:
                     t["vocal_tone"] = vocal_tone
 
             total_time = round(time.perf_counter() - t_start, 2)
@@ -369,7 +376,9 @@ class MultimodalEvaluatorService:
             )
             f_audio = executor.submit(
                 self.audio_module.process,
-                video_path
+                media_path=video_path,
+                vad_threshold=eff_vad_threshold,
+                pause_threshold_sec=eff_pause_threshold
             )
             vision_features = f_vision.result()
             audio_features = f_audio.result()
@@ -412,7 +421,7 @@ class MultimodalEvaluatorService:
         # Format nodding moments
         nodding_moments = events.get("nodding_moments", [])
 
-        # 3. Ground-truth turn analysis or automatic turn segmentation
+        # 3. Ground-truth turn analysis or automatic speaker turn segmentation
         if turn_markers and len(turn_markers) > 0:
             turn_evidence = self.turn_analyzer.analyze_ground_truth_turns(
                 turn_markers=turn_markers,
@@ -421,31 +430,28 @@ class MultimodalEvaluatorService:
                 nodding_moments=nodding_moments
             )
         else:
-            raw_turns = self.turn_analyzer.segment_conversational_turns(
+            raw_turns = self.turn_analyzer.segment_speaker_turns(
                 speech_segments=audio_features.speech_segments or [],
                 frame_timeline=vision_features.frame_timeline,
                 total_duration_sec=duration_sec,
-                word_timestamps=audio_features.word_timestamps or []
+                word_timestamps=audio_features.word_timestamps or [],
+                pause_threshold_sec=eff_pause_threshold
             )
-            turn_evidence = [
+            auto_turn_markers = [
                 {
-                    "turn_index": t["turn_id"],
-                    "role": "student" if t["type"] == "speaking" else "ai",
+                    "role": "speaker",
                     "start_sec": t["start_time"],
                     "end_sec": t["end_time"],
-                    "duration_sec": t["duration"],
-                    "text": t.get("text", ""),
-                    "eye_contact_ratio": t.get("vision", {}).get("eye_contact_ratio"),
-                    "smile_ratio": round(1.0 if t.get("vision", {}).get("dominant_emotion") == "happy" else 0.0, 2),
-                    "dominant_emotion": t.get("vision", {}).get("dominant_emotion"),
-                    "nodding_count": 0,
-                    "attentive_gaze_ratio": t.get("listening", {}).get("attentiveness") if t["type"] == "listening" else None,
-                    "speech_rate_wpm": audio_features.speech_rate_wpm if t["type"] == "speaking" else 0.0,
-                    "hesitation_seconds": 0.0,
-                    "is_speaking": t["type"] == "speaking"
+                    "text": t.get("text", "")
                 }
                 for t in raw_turns
             ]
+            turn_evidence = self.turn_analyzer.analyze_ground_truth_turns(
+                turn_markers=auto_turn_markers,
+                frame_timeline=vision_features.frame_timeline,
+                audio_features=audio_features,
+                nodding_moments=nodding_moments
+            )
 
         # 4. Optional 1s Timeline for UI visualization
         timeline_1s = None
@@ -471,7 +477,7 @@ class MultimodalEvaluatorService:
         )
 
         for t in turn_evidence:
-            if t.get("role") == "student":
+            if t.get("role") in ["student", "speaker", "user"]:
                 t["vocal_tone"] = vocal_tone
 
         return {

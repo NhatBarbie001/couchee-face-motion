@@ -259,6 +259,85 @@ class ConversationalTurnAnalyzer:
 
         return turns
 
+    def segment_speaker_turns(
+        self,
+        speech_segments: List[Dict[str, Any]],
+        frame_timeline: List[Dict[str, Any]],
+        total_duration_sec: float,
+        word_timestamps: Optional[List[Dict[str, Any]]] = None,
+        pause_threshold_sec: float = 0.3
+    ) -> List[Dict[str, Any]]:
+        """
+        Segments speech into discrete speaking turns for the speaker without inserting AI/listening roles.
+        Any silence/pause >= pause_threshold_sec (default 0.3s) defines a new turn.
+        """
+        word_timestamps = word_timestamps or []
+        working_segments = list(speech_segments or [])
+
+        if not working_segments and word_timestamps:
+            cur_start = word_timestamps[0]["start"]
+            cur_end = word_timestamps[0]["end"]
+            for w in word_timestamps[1:]:
+                if w["start"] - cur_end < pause_threshold_sec:
+                    cur_end = max(cur_end, w["end"])
+                else:
+                    working_segments.append({
+                        "start": round(cur_start, 2),
+                        "end": round(cur_end, 2),
+                        "duration": round(cur_end - cur_start, 2),
+                        "speech": True
+                    })
+                    cur_start = w["start"]
+                    cur_end = w["end"]
+            working_segments.append({
+                "start": round(cur_start, 2),
+                "end": round(cur_end, 2),
+                "duration": round(cur_end - cur_start, 2),
+                "speech": True
+            })
+
+        if not working_segments:
+            turn = self._build_turn_data(
+                turn_id=1,
+                turn_type="speaking",
+                t_start=0.0,
+                t_end=total_duration_sec,
+                frame_timeline=frame_timeline,
+                word_timestamps=word_timestamps
+            )
+            turn["role"] = "speaker"
+            return [turn]
+
+        raw_speaking_spans: List[Tuple[float, float]] = []
+        cur_start = working_segments[0]["start"]
+        cur_end = working_segments[0]["end"]
+
+        for seg in working_segments[1:]:
+            gap = seg["start"] - cur_end
+            if gap < pause_threshold_sec:
+                cur_end = max(cur_end, seg["end"])
+            else:
+                raw_speaking_spans.append((cur_start, cur_end))
+                cur_start = seg["start"]
+                cur_end = seg["end"]
+        raw_speaking_spans.append((cur_start, cur_end))
+
+        turns: List[Dict[str, Any]] = []
+        for turn_id, (sp_start, sp_end) in enumerate(raw_speaking_spans, start=1):
+            t_data = self._build_turn_data(
+                turn_id=turn_id,
+                turn_type="speaking",
+                t_start=sp_start,
+                t_end=sp_end,
+                frame_timeline=frame_timeline,
+                word_timestamps=word_timestamps
+            )
+            t_data["role"] = "speaker"
+            turns.append(t_data)
+
+        return turns
+
+
     def _build_turn_data(
         self,
         turn_id: int,
@@ -518,10 +597,12 @@ class ConversationalTurnAnalyzer:
                 if gap >= 1.5:
                     turn_hesitations_sec += gap
 
-            if role == "student":
+            if role in ["student", "speaker", "user"]:
                 turn_item["eye_contact_ratio"] = eye_contact_ratio
                 turn_item["smile_ratio"] = smile_ratio
                 turn_item["dominant_emotion"] = dom_emo
+                turn_item["nodding_count"] = nods_in_turn
+                turn_item["attentive_gaze_ratio"] = attentive_ratio
                 turn_item["speech_rate_wpm"] = calculated_wpm
                 turn_item["hesitation_seconds"] = round(turn_hesitations_sec, 2)
                 turn_item["is_speaking"] = word_count > 0 or len(turn_segments) > 0
