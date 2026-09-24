@@ -347,12 +347,16 @@ class MultimodalEvaluatorService:
                     "speech_ratio": round(audio_features.speech_ratio, 4),
                     "pause_ratio": round(audio_features.pause_ratio, 4),
                     "total_hesitations_count": len(hesitation_events),
+                    "no_face_count": None,
+                    "no_face_duration_sec": None,
+                    "no_face_ratio": None,
                     "energy_mean": round(float(audio_features.energy_mean), 4),
                     "vocal_enthusiasm_ratio": round(float(audio_features.enthusiasm_ratio), 4),
                     "vocal_tone": vocal_tone
                 },
                 "anomalies": {
                     "distraction_moments": [],
+                    "no_face_moments": [],
                     "hesitation_moments": hesitation_events,
                     "nodding_moments": []
                 },
@@ -506,12 +510,16 @@ class MultimodalEvaluatorService:
                 "speech_ratio": round(audio_features.speech_ratio, 4),
                 "pause_ratio": round(audio_features.pause_ratio, 4),
                 "total_hesitations_count": len(hesitation_moments),
+                "no_face_count": vision_features.no_face_count,
+                "no_face_duration_sec": vision_features.no_face_duration_sec,
+                "no_face_ratio": vision_features.no_face_ratio,
                 "energy_mean": round(float(audio_features.energy_mean), 4),
                 "vocal_enthusiasm_ratio": round(float(audio_features.enthusiasm_ratio), 4),
                 "vocal_tone": vocal_tone
             },
             "anomalies": {
                 "distraction_moments": distraction_moments,
+                "no_face_moments": vision_features.no_face_episodes or [],
                 "hesitation_moments": hesitation_moments,
                 "nodding_moments": [
                     {"timestamp": n.get("timestamp", 0.0), "amplitude": n.get("amplitude", 0.0)}

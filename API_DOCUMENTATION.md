@@ -20,7 +20,9 @@ Tài liệu đặc tả kỹ thuật REST API đánh giá kỹ năng bán hàng 
 
 | Phiên bản | Phương thức | Endpoint | Định dạng Input | Mục đích |
 | :---: | :---: | :--- | :---: | :--- |
-| **v2 (Khuyên dùng)** | `POST` | `/api/v2/analyze` | `application/json` | **Sensory Engine v2**: Bóc tách bằng chứng hành vi theo `turn_markers` (cho LLM / Couchee) |
+| **v2 (Auto Turns)** | `POST` | `/api/v2/analyze-auto` | `application/json` | **Sensory Auto-Turns**: Tự động bóc tách lượt nói bằng ASR + VAD 0.3s (không cần `turn_markers`) |
+| **v2 (Auto Turns)** | `POST` | `/api/v2/analyze-video` | `multipart/form-data` | Upload video trực tiếp hoặc truyền path, tự động ngắt lượt khi nghỉ $\ge 0.3$s |
+| **v2 (Khuyên dùng)** | `POST` | `/api/v2/analyze` | `application/json` | **Sensory Engine v2**: Bóc tách bằng chứng hành vi theo `turn_markers` có sẵn |
 | **System** | `GET` | `/api/v1/health` | Không | Kiểm tra trạng thái GPU VRAM & Warm state |
 | **v1 (Legacy)** | `POST` | `/api/v1/analyze-json` | `application/json` | Phân tích video đường dẫn file (Chấm điểm cứng 100đ) |
 | **v1 (Legacy)** | `POST` | `/api/v1/analyze` | `multipart/form-data` | Upload trực tiếp file video từ Form |
@@ -228,6 +230,104 @@ Nhận đường dẫn file video và tự động tính điểm 100đ theo rubr
   * `grade`: Xếp loại (`A (Thành Thạo)`, `B`, `C`...).
   * `breakdown`: Điểm 4 tiêu chí (Độ tự tin 25đ, Lắng nghe tích cực 25đ, Ngữ điệu giọng nói 25đ, Sự ấm áp nét mặt 25đ).
   * `strengths` & `areas_for_improvement`: Nhận xét mẫu.
+
+---
+
+## 4. Chi Tiết API v2 Auto Turns: Tự Động Trích Xuất Lượt Nói (`POST /api/v2/analyze-auto` & `/api/v2/analyze-video`)
+
+Được thiết kế cho các kịch bản **không có sẵn mốc `turn_markers`** (ví dụ: upload video trực tiếp từ client). Hệ thống sử dụng **Zipformer ASR** nhận diện lời thoại tiếng Việt và **Silero VAD độ nhạy cao (threshold = 0.3)**. Mỗi khi người nói dừng/nghỉ $\ge 0.3$ giây, hệ thống lập tức chốt xong lượt nói hiện tại và tạo lượt nói tiếp theo. Tất cả các turn đều mang `role: "speaker"` (không chèn role AI giả lập).
+
+### 4.1. Endpoint 1: JSON Body (`POST /api/v2/analyze-auto`)
+* **Headers**: `Content-Type: application/json`
+* **Request Body (`AnalyzeAutoRequest`)**:
+```json
+{
+  "video_path": "/home/dinhnhat/couchee-face-motion/video/tiktok1.mp4",
+  "session_id": "auto_session_01",
+  "vad_threshold": 0.3,
+  "pause_threshold_sec": 0.3,
+  "step": 6,
+  "batch_size": 32,
+  "include_timeline_1s": true
+}
+```
+
+| Tham số | Kiểu | Mặc định | Bắt buộc | Mô tả |
+| :--- | :---: | :---: | :---: | :--- |
+| `video_path` | `string` | — | **Có** | Đường dẫn tuyệt đối hoặc tương đối tới video/audio trên server |
+| `session_id` | `string` | `null` | Không | Mã định danh phiên làm việc (mặc định lấy theo tên file) |
+| `vad_threshold` | `float` | `0.3` | Không | Ngưỡng kích hoạt tiếng nói của Silero VAD (0.3: cực nhạy, bắt âm thì thầm) |
+| `pause_threshold_sec`| `float` | `0.3` | Không | Thời gian khoảng lặng (giây) để tách lượt nói riêng biệt (mặc định 0.3s) |
+| `step` | `int` | `6` | Không | Bước nhảy frame video |
+| `batch_size` | `int` | `32` | Không | Batch size GPU inference |
+| `include_timeline_1s` | `bool` | `true` | Không | Trả về chuỗi dữ liệu 1s resolution |
+
+---
+
+### 4.2. Endpoint 2: Multipart Upload (`POST /api/v2/analyze-video`)
+* **Headers**: `Content-Type: multipart/form-data`
+* **Form Fields**:
+  * `file`: File video upload trực tiếp (tuỳ chọn nếu đã có `video_path`).
+  * `video_path`: Đường dẫn file video trên server (tuỳ chọn nếu upload `file`).
+  * `session_id`: Mã phiên làm việc.
+  * `vad_threshold`: Ngưỡng nhạy VAD (mặc định `0.3`).
+  * `pause_threshold_sec`: Thời gian nghỉ để tách turn (mặc định `0.3`).
+  * `step`: Bước nhảy frame (mặc định `6`).
+  * `batch_size`: Batch size GPU (mặc định `32`).
+  * `include_timeline_1s`: Kèm timeline 1s (mặc định `true`).
+
+---
+
+### 4.3. Response Body (`BehavioralEvidenceResponse`)
+Cả 2 endpoint trả về cùng cấu trúc JSON chuẩn của `/api/v2/analyze`, trong đó `turn_evidence` chứa toàn bộ các lượt nói đã được bóc tách:
+```json
+{
+  "session_id": "auto_session_01",
+  "status": "completed",
+  "media_type": "video",
+  "duration_seconds": 38.6,
+  "performance": {
+    "execution_time_sec": 6.2,
+    "realtime_multiplier": "6.22x"
+  },
+  "overall_metrics": {
+    "eye_contact_ratio": 0.825,
+    "distracted_ratio": 0.175,
+    "nodding_count": 5,
+    "smile_ratio": 0.35,
+    "dominant_emotions": { "happy": 0.35, "neutral": 0.65 },
+    "speech_rate_wpm": 165.2,
+    "pitch_variance": 4820.5,
+    "vocal_tone": "confident"
+  },
+  "anomalies": {
+    "distraction_moments": [],
+    "hesitation_moments": [],
+    "nodding_moments": []
+  },
+  "turn_evidence": [
+    {
+      "turn_index": 1,
+      "role": "speaker",
+      "start_sec": 0.42,
+      "end_sec": 4.18,
+      "duration_sec": 3.76,
+      "text": "Chào mừng quý khách đã đến với cửa hàng của chúng tôi",
+      "eye_contact_ratio": 0.88,
+      "smile_ratio": 0.45,
+      "dominant_emotion": "happy",
+      "nodding_count": 1,
+      "attentive_gaze_ratio": 0.92,
+      "speech_rate_wpm": 175.5,
+      "hesitation_seconds": 0.0,
+      "is_speaking": true,
+      "energy_mean": 0.045,
+      "vocal_tone": "confident"
+    }
+  ],
+  "timeline_1s": [ ... ]
+}
+```
 
 ---
 

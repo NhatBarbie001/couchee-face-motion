@@ -400,6 +400,73 @@ async def analyze_video_auto_upload(
                 pass
 
 
+@app.post("/api/v2/analyze-upload", tags=["Inference v2 (Upload)"], response_model=BehavioralEvidenceResponse)
+async def analyze_video_upload_with_markers(
+    file: UploadFile = File(..., description="Video/Audio file uploaded directly as multipart/form-data"),
+    session_id: Optional[str] = Form(None),
+    media_type: str = Form("video", description="'video' or 'audio'"),
+    turn_markers: Optional[str] = Form(None, description="JSON string array of TurnMarker objects"),
+    step: int = Form(6, description="Frame sampling step"),
+    batch_size: int = Form(32, description="GPU batch size"),
+    include_timeline_1s: bool = Form(False, description="Include 1s resolution timeline")
+):
+    """
+    Sensory Engine v2 (Direct File Upload with Turn Markers):
+    Allows remote clients/backends (e.g. Couchee Backend on Windows) to upload a video/audio file
+    and provide turn_markers as JSON string.
+    """
+    if evaluator_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model service is still initializing or unavailable."
+        )
+
+    temp_video_path = None
+    try:
+        suffix = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_video_path = tmp.name
+            shutil.copyfileobj(file.file, tmp)
+
+        current_session_id = session_id or os.path.splitext(file.filename or "session")[0]
+
+        parsed_markers = None
+        if turn_markers:
+            try:
+                import json
+                parsed_markers = json.loads(turn_markers) if isinstance(turn_markers, str) else turn_markers
+            except Exception as e:
+                print(f"[Warning] Failed to parse turn_markers JSON: {e}")
+                parsed_markers = None
+
+        evidence = evaluator_service.extract_behavioral_evidence(
+            video_path=temp_video_path,
+            turn_markers=parsed_markers,
+            media_type=media_type,
+            step=step,
+            batch_size=batch_size,
+            session_id=current_session_id,
+            include_timeline_1s=include_timeline_1s
+        )
+
+        return JSONResponse(content=evidence)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload behavioral assessment failed: {str(e)}"
+        )
+    finally:
+        if temp_video_path and os.path.exists(temp_video_path):
+            try:
+                os.remove(temp_video_path)
+            except Exception:
+                pass
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False, workers=1)
+

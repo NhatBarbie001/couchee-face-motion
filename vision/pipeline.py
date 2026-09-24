@@ -43,6 +43,10 @@ class VisionFeatures:
     gaze_break_count: int
     total_frames_analyzed: int
     duration_seconds: float
+    no_face_count: int = 0
+    no_face_duration_sec: float = 0.0
+    no_face_ratio: float = 0.0
+    no_face_episodes: Optional[List[Dict[str, Any]]] = None
     annotated_video_path: Optional[str] = None
     frame_timeline: Optional[List[Dict[str, Any]]] = None
 
@@ -147,6 +151,44 @@ class VisionModule:
         pose_stats = self.head_pose_analyzer.aggregate_session(all_pose_results, fps=fps)
         gaze_stats = self.gaze_analyzer.aggregate_session(all_gaze_results, fps=fps, step=step)
 
+        # Aggregate no-face episodes
+        no_face_frames = [f for f in all_frame_timeline if not f.get("face_detected", True)]
+        total_f = max(1, len(all_frame_timeline))
+        no_face_ratio = round(len(no_face_frames) / total_f, 4)
+
+        no_face_episodes = []
+        cur_episode = []
+        for f in all_frame_timeline:
+            if not f.get("face_detected", True):
+                cur_episode.append(f)
+            else:
+                if cur_episode:
+                    t_start = cur_episode[0]["timestamp"]
+                    t_end = cur_episode[-1]["timestamp"]
+                    dur = round(max(0.1, t_end - t_start), 2)
+                    if dur >= 0.5:
+                        no_face_episodes.append({
+                            "start_sec": t_start,
+                            "end_sec": t_end,
+                            "duration": dur,
+                            "reason": f"Không phát hiện khuôn mặt trong {dur}s"
+                        })
+                    cur_episode = []
+        if cur_episode:
+            t_start = cur_episode[0]["timestamp"]
+            t_end = cur_episode[-1]["timestamp"]
+            dur = round(max(0.1, t_end - t_start), 2)
+            if dur >= 0.5:
+                no_face_episodes.append({
+                    "start_sec": t_start,
+                    "end_sec": t_end,
+                    "duration": dur,
+                    "reason": f"Không phát hiện khuôn mặt trong {dur}s"
+                })
+
+        no_face_duration_sec = round(sum(ep["duration"] for ep in no_face_episodes), 2) if no_face_episodes else round(len(no_face_frames) * (duration_sec / total_f), 2)
+        no_face_count = len(no_face_episodes)
+
         return VisionFeatures(
             eye_contact_ratio=gaze_stats["eye_contact_ratio"],
             gaze_away_ratio=gaze_stats["gaze_away_ratio"],
@@ -169,6 +211,10 @@ class VisionModule:
             gaze_break_count=gaze_stats["gaze_break_count"],
             total_frames_analyzed=len(all_emotion_results),
             duration_seconds=round(duration_sec, 2),
+            no_face_count=no_face_count,
+            no_face_duration_sec=no_face_duration_sec,
+            no_face_ratio=no_face_ratio,
+            no_face_episodes=no_face_episodes,
             annotated_video_path=output_video_path if save_video else None,
             frame_timeline=all_frame_timeline
         )

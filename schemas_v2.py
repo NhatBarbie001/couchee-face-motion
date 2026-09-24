@@ -74,6 +74,9 @@ class OverallBehavioralMetrics(BaseModel):
     speech_ratio: Optional[float] = None
     pause_ratio: Optional[float] = None
     total_hesitations_count: Optional[int] = None
+    no_face_count: Optional[int] = None
+    no_face_duration_sec: Optional[float] = None
+    no_face_ratio: Optional[float] = None
     energy_mean: Optional[float] = None
     vocal_enthusiasm_ratio: Optional[float] = None
     vocal_tone: Optional[str] = None
@@ -81,6 +84,7 @@ class OverallBehavioralMetrics(BaseModel):
 
 class BehavioralAnomalies(BaseModel):
     distraction_moments: List[AnomalyMoment] = Field(default=[])
+    no_face_moments: List[AnomalyMoment] = Field(default=[])
     hesitation_moments: List[AnomalyMoment] = Field(default=[])
     nodding_moments: List[Dict[str, float]] = Field(default=[])
 
